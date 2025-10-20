@@ -258,7 +258,7 @@ if db:
                 "Begrensende faktorer": int(r.get("begrensende_faktorer", 0)),
                 "Begr. (farge)": color_chip_for_begr(int(r.get("begrensende_faktorer", 0))),
                 "Begr. – begrunnelse": r.get("begrensende_faktorer_note", ""),
-                "Oppdatert": r.get("updated", "")
+                "Oppdatert": r.get("updated", ""),
                 "Avstand til brannstasjon": int(r.get("avstand_brannstasjon", 0)),
                 "Brst. (farge)": color_chip_for_brst(int(r.get("avstand_brannstasjon", 0))),
                 "Brst. – begrunnelse": r.get("avstand_brannstasjon_note", ""),
