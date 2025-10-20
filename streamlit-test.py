@@ -106,7 +106,7 @@ else:
             st.session_state["current_obj"] = ny
             save_db_to_file(DB_FILENAME, db)
             st.success(f"Opprettet objekt: {ny}")
-            st.experimental_rerun()
+            st.rerun()
 
 curr = st.session_state["current_obj"]
 
