@@ -9,6 +9,7 @@ DB_FILENAME = "risiko_db.json"
 CATEGORIES = [
     ("brannrisiko", "Brannrisiko (0=ikke satt, 1=lav, 2=middels, 3=høy)", 0),
     ("begrensende_faktorer", "Begrensende faktorer (0=ingen … 3=høy)", 0),
+    ("avstand_brannstasjon", "Avstand til brannstasjon (0=ikke satt, 1=kort, 2=middels, 3=lang)", 0),
 ]
 
 # ---- Hjelpere ----
@@ -46,6 +47,9 @@ def color_chip_for_brann(v: int) -> str:
 def color_chip_for_begr(v: int) -> str:
     # snudd skala: høy = grønn, lav/ingen = rød
     return {0: "🟥 Ingen", 1: "🟥 Lav", 2: "🟨 Middels", 3: "🟩 Høy"}.get(int(v), "⚪ Ikke satt")
+  
+def color_chip_for_brst(v: int) -> str:
+    return {0: "🟥 Ingen", 1: "🟩 kort", 2: "🟨 Middels", 3: "🟥 Lang"}.get(int(v), "⚪ Ikke satt")
 
 # ---- Session init ----
 if "db" not in st.session_state:
@@ -199,12 +203,36 @@ else:
         )
 
         st.markdown("---")
+                # Rad 3: Avstand til brannstasjon
+        st.markdown("#### Avstand til brannstasjon")
+        brst_val = int(rec.get("avstand_brannstasjon", 0))
+        brst_labels = {0: "Ingen", 1: "Kort", 2: "Middels", 3: "Lang"}
+        brst_label_current = brst_labels.get(begr_val, "Ingen")
+        brst_label_new = st.radio(
+            "Velg nivå:",
+            options=list(brst_labels.values()),
+            index=list(brst_labels.values()).index(brst_label_current),
+            horizontal=True,
+            key=f"radio_{curr}_avstand",
+        )
+        new_brst = [k for k, v in brst_labels.items() if v == brst_label_new][0]
+        st.write(color_chip_for_begr(new_brst))
+        brst_note = st.text_area(
+            "Begrunnelse (avstand brannstasjon)",
+            value=rec.get("avstand_brannstasjon_note",""),
+            key=f"note_{curr}_avstand",
+            placeholder="Er brannstasjonen døgnbemannet?"
+        )
+
+        st.markdown("---")
         submitted = st.form_submit_button("💾 Lagre endringer")
         if submitted:
             rec["brannrisiko"] = int(new_brann)
             rec["brannrisiko_note"] = brann_note
             rec["begrensende_faktorer"] = int(new_begr)
             rec["begrensende_faktorer_note"] = begr_note
+            rec["avstand_brannstasjon"] = int(new_brst)
+            rec["avstand_brannstasjon_note"] = brst_note
             rec["updated"] = now_iso()
             ok, err = save_db_to_file(DB_FILENAME, db)
             if ok:
