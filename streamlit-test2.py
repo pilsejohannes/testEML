@@ -9,17 +9,17 @@ st.set_page_config(page_title="EML-prototype", layout="wide")
 import streamlit as st, sys
 from pathlib import Path
 st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
-def force_rerun():
-    # Streamlit >= 1.36
-    if hasattr(st, "rerun"):
-        st.rerun()
-        return
-    # Eldre Streamlit
-    if hasattr(st, "experimental_rerun"):
-        st.experimental_rerun()
-        return
-    # Nød-løsning: trigge endring i state for å utløse rerun
-    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
+#def force_rerun():
+#    # Streamlit >= 1.36
+#    if hasattr(st, "rerun"):
+#        st.rerun()
+#        return
+#    # Eldre Streamlit
+#    if hasattr(st, "experimental_rerun"):
+#        st.experimental_rerun()
+#        return
+#    # Nød-løsning: trigge endring i state for å utløse rerun
+#    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
 VERSION = "1.0"
 st.title(f"EML-prototype (v{VERSION})")
