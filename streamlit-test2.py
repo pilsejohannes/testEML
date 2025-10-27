@@ -128,7 +128,7 @@ with st.sidebar:
                 db.update(loaded)
                 save_db_to_file(DB_FILENAME, db)
                 st.success("Database importert.")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Filen må være et JSON-objekt (dict)")
         except Exception as e:
@@ -205,7 +205,7 @@ with tab_db:
                     imported += 1
                 save_db_to_file(DB_FILENAME, db)
                 st.success(f"Importert {imported} rader til databasen.")
-                st.experimental_rerun()
+                st.rerun()
 
         except Exception as e:
             st.error(f"Kunne ikke lese Excel: {e}")
@@ -287,14 +287,14 @@ try:
                                 db[k]["include"] = True
                                 db[k]["scenario"] = scen_label
                             save_db_to_file(DB_FILENAME, db)
-                            st.experimental_rerun()
+                            st.rerun()
                     with sc_col3:
                         if st.button("Fjern ALLE i kumule", key=f"clrall_{kumule}"):
                             for _, row in grp.iterrows():
                                 k = row["_key"]
                                 db[k]["include"] = False
                             save_db_to_file(DB_FILENAME, db)
-                            st.experimental_rerun()
+                            st.rerun()
 
                     # Radvis avhuking med mer info
                     changed_include: Dict[str, bool] = {}
