@@ -5,33 +5,33 @@ from typing import Dict, Any, List, Tuple, Optional
 import streamlit as st
 
 # ==========================================================
-# EML-prototype – v0.4
+# EML-prototype – v0.5 (kumule-summer + EML-sats)
 # ----------------------------------------------------------
 # Nytt i denne versjonen:
-# - Manuell overstyring av EML (med tydelig merking av kilde)
-# - Startbilde-velger med to moduser:
-#     1) Kumulesoner fra regneark (Excel) med terskel (default 800 MNOK)
-#     2) Manuell registrering (slik som tidligere)
-# - Import av Excel med kolonnemapping til angitt skjema (se "Excel-kolonner" nedenfor)
-# - Velg kumulesoner > terskel, huk av risikoer (per Risikonr) og importer til databasen
-# - Effektiv EML = manuell hvis aktiv, ellers maskinelt beregnet (veiledende)
+# - EML beregnes via en EML-sats (% av forsikringssum)
+#   * Maskinell sats (veiledende) avledet av faktorene
+#   * Manuell overstyring av sats (prosent) – tydelig kildeangivelse
+#   * (Bakoverkompatibel) Manuell overstyring av EML-beløp hvis eksisterende felt er satt
+# - Kumulevis oppsummering: summerer EML (effektiv) pr. kumulesone
+# - Kumule-listing viser alle risikoer i soner over terskel (ikke bare store risikoer)
+# - Robust Excel-lesing (openpyxl) og tydelig feedback
 # ==========================================================
 
 st.set_page_config(page_title="EML-prototype", layout="wide")
-VERSION = "0.4.1"
+
+from pathlib import Path
+VERSION = "0.5"
 st.title(f"EML-prototype (v{VERSION})")
-st.caption(
-    "Data lagres lokalt som JSON dersom miljøet tillater filskriving. Ellers bruk nedlasting fra sidemenyen."
-)
+st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
 # ------------------------------
 # Konfig / taksonomi
 # ------------------------------
 DB_FILENAME = "risiko_db.json"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEFAULT_TERSKEL = 800_000_000  # 800 MNOK
 
-# Excel-kolonner – forventet navn i regnearket (case-sensitivt som regel, men vi lowercaser ved matching)
+# Excel-kolonner – forventet navn i regnearket
 EXPECTED_COLS = {
     "kumulenr": "Kumulenr",
     "gnr": "GNR",
@@ -79,9 +79,11 @@ def default_record() -> Dict[str, Any]:
         "_schema": SCHEMA_VERSION,
         "updated": now_iso(),
         "audit": [],
-        # EML-overstyring
-        "eml_manual_on": False,
-        "eml_manual_value": 0.0,
+        # Overstyringer (ny: sats). Behold gamle felt for bakoverkomp.
+        "eml_rate_manual_on": False,
+        "eml_rate_manual": 0.0,   # 0.25 => 25 %
+        "eml_manual_on": False,   # legacy (absolutt beløp)
+        "eml_manual_value": 0.0,  # legacy
         # metadata
         "risikonr": None,
         "kumulesone": None,
@@ -101,6 +103,8 @@ def migrate_record(rec: Dict[str, Any]) -> Dict[str, Any]:
         return default_record()
     rec.setdefault("_schema", SCHEMA_VERSION)
     rec.setdefault("audit", [])
+    rec.setdefault("eml_rate_manual_on", False)
+    rec.setdefault("eml_rate_manual", 0.0)
     rec.setdefault("eml_manual_on", False)
     rec.setdefault("eml_manual_value", 0.0)
     rec.setdefault("risikonr", None)
@@ -155,8 +159,9 @@ def chip_for(key: str, v: int) -> str:
 
 
 # ------------------------------
-# EML – maskinell beregning (veiledende)
+# EML – maskinell sats og beløp (veiledende)
 # ------------------------------
+# Vi uttrykker modellen som en RATE (andel av SI). Beløp = rate * SI.
 BASE = 0.6
 ALPHA = [1.00, 1.15, 1.35, 1.60]      # brann
 BETA  = [0.40, 0.30, 0.20, 0.10]      # beskyttelse (reduserer)
@@ -164,29 +169,60 @@ GAMMA = [0.05, 0.10, 0.15, 0.20]      # begrensning (reduserer)
 EXPO  = [1.30, 1.15, 1.00, 0.85]      # eksponering
 
 
-def calc_eml_machine(rec: Dict[str, Any]) -> int:
+def clamp01(x: float) -> float:
+    return max(0.0, min(1.0, float(x)))
+
+
+def calc_eml_rate_machine(rec: Dict[str, Any]) -> float:
     try:
-        si = float(rec.get("sum_forsikring", 0))
         b = int(rec.get("brannrisiko", 0))
         lim = int(rec.get("begrensende_faktorer", 0))
         prot = int(rec.get("deteksjon_beskyttelse", 0))
         expo = int(rec.get("eksponering_nabo", 0))
-        eml = si * BASE * ALPHA[b] * EXPO[expo]
-        eml *= (1 - BETA[prot])
-        eml *= (1 - GAMMA[lim])
-        return int(max(0, round(eml)))
+        rate = BASE * ALPHA[b] * EXPO[expo]
+        rate *= (1 - BETA[prot])
+        rate *= (1 - GAMMA[lim])
+        return clamp01(rate)
+    except Exception:
+        return 0.0
+
+
+def calc_eml_rate_effective(rec: Dict[str, Any]) -> float:
+    # Prioritet: manuell sats -> legacy manuell beløp -> maskinell sats
+    if rec.get("eml_rate_manual_on"):
+        return clamp01(float(rec.get("eml_rate_manual", 0.0)))
+    if rec.get("eml_manual_on"):
+        try:
+            si = float(rec.get("sum_forsikring", 0)) or 0.0
+            val = float(rec.get("eml_manual_value", 0.0))
+            return clamp01(0.0 if si <= 0 else val/si)
+        except Exception:
+            return 0.0
+    return calc_eml_rate_machine(rec)
+
+
+def calc_eml_amount_from_rate(rec: Dict[str, Any], rate: float) -> int:
+    try:
+        si = float(rec.get("sum_forsikring", 0))
+        return int(max(0, round(si * rate)))
     except Exception:
         return 0
 
 
+def calc_eml_machine(rec: Dict[str, Any]) -> int:
+    return calc_eml_amount_from_rate(rec, calc_eml_rate_machine(rec))
+
+
 def calc_eml_effective(rec: Dict[str, Any]) -> int:
-    if rec.get("eml_manual_on"):
-        return int(max(0, round(float(rec.get("eml_manual_value", 0)))))
-    return calc_eml_machine(rec)
+    return calc_eml_amount_from_rate(rec, calc_eml_rate_effective(rec))
 
 
 def eml_source_label(rec: Dict[str, Any]) -> str:
-    return "Manuelt satt" if rec.get("eml_manual_on") else "Maskinelt beregnet (veiledende)"
+    if rec.get("eml_rate_manual_on"):
+        return "Manuelt satt sats"
+    if rec.get("eml_manual_on"):
+        return "Manuelt satt beløp (legacy)"
+    return "Maskinelt (veiledende)"
 
 
 # ------------------------------
@@ -196,8 +232,6 @@ if "db" not in st.session_state:
     st.session_state.db = load_db_from_file(DB_FILENAME) or {}
 if "current_obj" not in st.session_state:
     st.session_state.current_obj = None
-if "excel_df" not in st.session_state:
-    st.session_state.excel_df = None
 if "terskel" not in st.session_state:
     st.session_state.terskel = DEFAULT_TERSKEL
 
@@ -241,7 +275,7 @@ with st.sidebar:
         min_value=0,
         step=50_000_000,
         value=int(st.session_state.terskel),
-        help="Vis kumulesoner der sum forsikringssummer ≥ terskel. Default 800 MNOK.")
+        help="Vis kumulesoner der sum forsikring ≥ terskel. Default 800 MNOK.")
 
 # ------------------------------
 # Startmodus-velger
@@ -257,7 +291,7 @@ start_mode = st.radio(
 # ==========================================================
 if start_mode == "Kumulesoner fra Excel":
     st.subheader("1) Last opp Excel med risikoer")
-    st.caption("Eksempel: 'Test til streamlit.xlsx' fra skrivebordet. Vi forventer kolonner som beskrevet nedenfor.")
+    st.caption("Eksempel: 'Test til streamlit.xlsx'. Vi forventer kolonner som beskrevet nedenfor.")
 
 with st.expander("Forventede Excel-kolonner", expanded=False):
     st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
@@ -268,21 +302,16 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
     if up_xlsx is not None:
         try:
             import pandas as pd, io
-            # Les fra fil-uploader med openpyxl eksplisitt for å unngå engine-issues
             _bytes = up_xlsx.read()
             df = pd.read_excel(io.BytesIO(_bytes), engine="openpyxl")
-            up_xlsx.seek(0)  # reset i tilfelle vi vil lese igjen
-            # Normaliser kolonnenavn til lower uten ekstra mellomrom
-            df.columns = [str(c).strip() for c in df.columns]
+            up_xlsx.seek(0)
 
-            # Bygg et mapping dict: lower->original
+            df.columns = [str(c).strip() for c in df.columns]
             lower_to_orig = {c.lower(): c for c in df.columns}
 
             def col(name_key: str) -> Optional[str]:
-                # Returner eksisterende kolonnenavn hvis finnes, ellers None
                 expected = EXPECTED_COLS[name_key]
-                key_lower = expected.lower()
-                return lower_to_orig.get(key_lower)
+                return lower_to_orig.get(expected.lower())
 
             required = ["kumulenr", "risikonr"]
             missing = [EXPECTED_COLS[k] for k in required if col(k) is None]
@@ -291,16 +320,16 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
             else:
                 st.success(f"Lest {len(df)} rader fra Excel – kolonner: {list(df.columns)}")
 
-                # Utled per-kumule summering: bruk 'Kumulesum' hvis tilstede; ellers sum av 'Tariffsum'
                 kumule_col = col("kumulenr")
                 kumulesum_col = col("kumulesum")
                 tariff_col = col("tariffsum")
 
-                # Lag en hjelpekolonne for sumkandidat
+                # Sum per kumule: bruk Kumulesum hvis tilstede, ellers sum av Tariffsum
+                import pandas as pd
                 if kumulesum_col and kumulesum_col in df.columns:
-                    df["__sum_candidate__"] = pd.to_numeric(df[kumulesum_col], errors="coerce")
+                    df["__sum_candidate__"] = pd.to_numeric(df[kumulesum_col], errors="coerce").fillna(0)
                 elif tariff_col and tariff_col in df.columns:
-                    df["__sum_candidate__"] = pd.to_numeric(df[tariff_col], errors="coerce")
+                    df["__sum_candidate__"] = pd.to_numeric(df[tariff_col], errors="coerce").fillna(0)
                 else:
                     df["__sum_candidate__"] = 0
 
@@ -309,7 +338,7 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
                 store = kumule_summer[kumule_summer["sum_kumule"] >= terskel]
 
                 st.subheader("2) Velg kumulesone(r) over terskel")
-                st.caption(f"Viser kumulesoner med sum ≥ {terskel:,.0f} NOK".replace(",", " "))
+                st.caption(f"Viser kumulesoner med samlet forsikringssum ≥ {terskel:,.0f} NOK".replace(",", " "))
                 st.dataframe(store.sort_values("sum_kumule"), use_container_width=True)
 
                 valgte_kumuler = st.multiselect(
@@ -318,7 +347,7 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
                 )
 
                 if valgte_kumuler:
-                    st.subheader("3) Velg risikoer (per kumulesone)")
+                    st.subheader("3) Velg risikoer (alle i valgt kumule)")
                     tablist = st.tabs([f"Kumule {k}" for k in valgte_kumuler])
 
                     selected_ids: List[str] = []
@@ -330,16 +359,11 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
                             kundenavn_col = col("kundenavn")
                             si_col = tariff_col or col("eml_sum") or col("kumulesum")
 
-                            # Rensk sum-kolonne til tall
                             if si_col:
                                 subset["__si__"] = pd.to_numeric(subset[si_col], errors="coerce").fillna(0)
                             else:
                                 subset["__si__"] = 0
 
-                            subset["__label__"] = subset[risiko_col].astype(str) + " – " + subset.get(adresse_col, "").astype(str)
-
-                            st.write(f"Risikoer i kumulesone {k}:")
-                            # Interaktive checkboxer
                             for i, row in subset.iterrows():
                                 rid = str(row[risiko_col])
                                 label = f"{rid} – {row.get(adresse_col, '')} (SI≈{int(row['__si__']):,} NOK)".replace(",", " ")
@@ -356,7 +380,6 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
                                 if rows.empty:
                                     continue
                                 row = rows.iloc[0]
-                                # Bygg navn og hent felter
                                 navn = f"{row[col('kumulenr')]}-{row[col('risikonr')]}-{row.get(col('adresse'), '')}".strip("-")
                                 rec = migrate_record(db.get(navn) or default_record())
                                 rec["objektnavn"] = str(row.get(col("kundenavn"), navn))
@@ -364,7 +387,7 @@ with st.expander("Forventede Excel-kolonner", expanded=False):
                                 rec["kundenavn"] = str(row.get(col("kundenavn"), ""))
                                 rec["risikonr"] = str(row.get(col("risikonr"), ""))
                                 rec["kumulesone"] = str(row.get(col("kumulenr"), ""))
-                                # Forsikringssum fra Tariffsum (fallback EML sum -> Kumulesum)
+                                # SI fra Tariffsum (fallback: EML sum -> Kumulesum)
                                 si_val = 0.0
                                 for key_try in [col("tariffsum"), col("eml_sum"), col("kumulesum")]:
                                     if key_try and key_try in row and not pd.isna(row[key_try]):
@@ -449,14 +472,16 @@ if start_mode == "Manuell registrering":
         db[curr] = rec
 
         # Toppkort med nøkkeltall
+        eml_rate_eff = calc_eml_rate_effective(rec)
+        eml_rate_mach = calc_eml_rate_machine(rec)
         eml_eff = calc_eml_effective(rec)
         eml_mach = calc_eml_machine(rec)
         with st.container():
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("EML (effektiv)", f"{eml_eff:,.0f}".replace(",", " "), help=eml_source_label(rec))
-            c2.metric("Maskinelt (veiledende)", f"{eml_mach:,.0f}".replace(",", " "))
-            c3.metric("Brannrisiko", chip_for("brannrisiko", rec.get("brannrisiko", 0)))
-            c4.metric("Beskyttelse", chip_for("deteksjon_beskyttelse", rec.get("deteksjon_beskyttelse", 0)))
+            c2.metric("Sats (effektiv)", f"{eml_rate_eff*100:.1f}%")
+            c3.metric("Maskinelt beløp", f"{eml_mach:,.0f}".replace(",", " "))
+            c4.metric("Maskinell sats", f"{eml_rate_mach*100:.1f}%")
             c5.metric("Eksponering", chip_for("eksponering_nabo", rec.get("eksponering_nabo", 0)))
 
         with st.form(key=f"edit_{curr}", clear_on_submit=False):
@@ -518,17 +543,31 @@ if start_mode == "Manuell registrering":
             expo, expo_note = level_radio("Eksponering/avstand til nabo", "eksponering_nabo", "0=tett … 3=isolert", rec.get("eksponering_nabo", 0))
 
             st.markdown("---")
-            # Overstyr EML manuelt
+            # Overstyr EML – sats (anbefalt) eller legacy beløp
             st.subheader("EML – kilde og overstyring")
-            eml_manual_on = st.checkbox("Overstyr EML manuelt", value=bool(rec.get("eml_manual_on", False)))
-            eml_manual_value = st.number_input(
-                "Manuell EML-verdi (NOK)",
+            use_manual_rate = st.checkbox("Overstyr EML-sats manuelt", value=bool(rec.get("eml_rate_manual_on", False)))
+            manual_rate_pct = st.number_input(
+                "Manuell EML-sats (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(rec.get("eml_rate_manual", 0.0) * 100.0),
+                step=0.5,
+                help="Når aktivert brukes denne satsen. Maskinell sats vises som veiledende."
+            )
+            # Legacy beløp om ønskelig
+            use_manual_abs = st.checkbox("(Valgfritt) Overstyr EML-beløp (legacy)", value=bool(rec.get("eml_manual_on", False)))
+            manual_abs = st.number_input(
+                "Manuelt EML-beløp (NOK)",
                 min_value=0.0,
                 value=float(rec.get("eml_manual_value", 0.0)),
                 step=100000.0,
-                help="Når aktivert brukes denne verdien som EML. Den maskinelle beregningen vises som veiledende."
+                help="Hvis satt, brukes dette beløpet. Satsen avledes av SI. Overstyres av manuell sats dersom begge er aktivert."
             )
-            st.info(f"Maskinelt beregnet (veiledende): {calc_eml_machine(rec):,} NOK".replace(",", " "))
+
+            st.info(
+                f"Maskinell sats (veiledende): {calc_eml_rate_machine(rec)*100:.1f}%  –  "
+                f"Maskinelt beløp: {calc_eml_machine(rec):,} NOK".replace(",", " ")
+            )
 
             submitted = st.form_submit_button("💾 Lagre endringer")
             if submitted:
@@ -541,14 +580,17 @@ if start_mode == "Manuell registrering":
                 rec["deteksjon_beskyttelse_note"] = prot_note
                 rec["eksponering_nabo"] = expo
                 rec["eksponering_nabo_note"] = expo_note
-                rec["eml_manual_on"] = bool(eml_manual_on)
-                rec["eml_manual_value"] = float(eml_manual_value)
+                rec["eml_rate_manual_on"] = bool(use_manual_rate)
+                rec["eml_rate_manual"] = float(manual_rate_pct) / 100.0
+                rec["eml_manual_on"] = bool(use_manual_abs)
+                rec["eml_manual_value"] = float(manual_abs)
                 rec["updated"] = now_iso()
                 rec.setdefault("audit", []).append({
                     "ts": now_iso(),
                     "msg": "Oppdatert vurderinger",
                     "eml_effective": calc_eml_effective(rec),
-                    "eml_machine": calc_eml_machine(rec),
+                    "eml_rate_effective": calc_eml_rate_effective(rec),
+                    "eml_rate_machine": calc_eml_rate_machine(rec),
                     "eml_source": eml_source_label(rec),
                 })
 
@@ -559,7 +601,7 @@ if start_mode == "Manuell registrering":
                     st.info("Kunne ikke lagre til fil i dette miljøet. Last ned JSON fra sidemenyen for å lagre lokalt.")
 
 # ------------------------------
-# Status for alle objekter
+# Status for alle objekter + kumule-eksponering
 # ------------------------------
 st.divider()
 st.subheader("📚 Status – alle objekter")
@@ -577,22 +619,35 @@ if db:
                 "Kumulesone": r.get("kumulesone", ""),
                 "Risikonr": r.get("risikonr", ""),
                 "Sum forsikring": r.get("sum_forsikring", 0),
-                "Brannrisiko": chip_for("brannrisiko", int(r.get("brannrisiko", 0))),
-                "Begrensende": chip_for("begrensende_faktorer", int(r.get("begrensende_faktorer", 0))),
-                "Beskyttelse": chip_for("deteksjon_beskyttelse", int(r.get("deteksjon_beskyttelse", 0))),
-                "Eksponering": chip_for("eksponering_nabo", int(r.get("eksponering_nabo", 0))),
+                "Sats (effektiv %)": round(calc_eml_rate_effective(r)*100, 2),
                 "EML (effektiv)": calc_eml_effective(r),
-                "EML-kilde": eml_source_label(r),
+                "Kilde": eml_source_label(r),
                 "Oppdatert": r.get("updated", ""),
             })
-        df = pd.DataFrame(rows).sort_values(["Kumulesone", "Objekt"]) if rows else pd.DataFrame()
-        st.dataframe(df, use_container_width=True)
-        st.download_button(
-            "⬇️ Last ned status (CSV)",
-            data=df.to_csv(index=False).encode("utf-8"),
-            file_name="eml_status.csv",
-            mime="text/csv",
-        )
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            st.dataframe(df.sort_values(["Kumulesone", "Objekt"]), use_container_width=True)
+
+            # Kumule-summer
+            st.subheader("📊 Kumule-eksponering (sum EML effektiv per kumulesone)")
+            grp = df.groupby("Kumulesone", dropna=False)["EML (effektiv)"].sum().reset_index()
+            grp = grp.sort_values("EML (effektiv)", ascending=False)
+            st.dataframe(grp, use_container_width=True)
+
+            st.download_button(
+                "⬇️ Last ned status (CSV)",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name="eml_status.csv",
+                mime="text/csv",
+            )
+            st.download_button(
+                "⬇️ Last ned kumule-summer (CSV)",
+                data=grp.to_csv(index=False).encode("utf-8"),
+                file_name="eml_kumule_summer.csv",
+                mime="text/csv",
+            )
+        else:
+            st.info("Ingen objekter i databasen ennå.")
     except Exception:
         st.info("Pandas ikke tilgjengelig – tabellvisning/CSV hoppet over.")
 else:
