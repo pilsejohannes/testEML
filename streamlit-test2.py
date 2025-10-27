@@ -223,6 +223,8 @@ with tab_db:
                 "Inkluder": bool(r.get("include", False)),
                 "Scenario": r.get("scenario", SCENARIOS[0]),
                 "EML (effektiv)": calc_eml_effective(r),
+                "Kilde": "Manuell" if r.get("eml_rate_manual_on") else "Maskinell",
+
             })
         df = pd.DataFrame(rows)
 
