@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import streamlit as st
 
 st.set_page_config(page_title="EML-prototype", layout="wide")
-VERSION = "0.9"
+VERSION = "1.0"
 st.title(f"EML-prototype (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -206,31 +206,31 @@ with tab_db:
         filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
 
     # Bygg DataFrame innenfor appen
-    try:
-        import pandas as pd
-        rows = []
-        for key, r in db.items():
-            if not isinstance(r, dict):
-                continue
-            rows.append({
-                "_key": key,
-                "Kumulesone": r.get("kumulesone", ""),
-                "Forsnr": r.get("forsnr", ""),
-                "Risikonr": r.get("risikonr", ""),
-                "Kunde": r.get("kundenavn", ""),
-                "Adresse": r.get("adresse", ""),
-                "Sum forsikring": float(r.get("sum_forsikring", 0) or 0),
-                "Inkluder": bool(r.get("include", False)),
-                "Scenario": r.get("scenario", SCENARIOS[0]),
-                "EML (effektiv)": calc_eml_effective(r),
-                "Kilde": "Manuell" if r.get("eml_rate_manual_on") else "Maskinell",
-
-            })
-        df = pd.DataFrame(rows)
-
-        if df.empty:
+try:
+    import pandas as pd
+    rows = []
+    for key, r in db.items():
+        if not isinstance(r, dict):
+            continue
+        rows.append({
+            "_key": key,
+            "Kumulesone": r.get("kumulesone", ""),
+            "Forsnr": r.get("forsnr", ""),
+            "Risikonr": r.get("risikonr", ""),
+            "Kunde": r.get("kundenavn", ""),
+            "Adresse": r.get("adresse", ""),
+            "Sum forsikring": float(r.get("sum_forsikring", 0) or 0),
+            "EML (effektiv)": calc_eml_effective(r),
+            "Kilde": ("🟩 Manuell" if bool(r.get("eml_rate_manual_on", False)) else "⚙️ Maskinell"),
+            "Inkluder": bool(r.get("include", False)),
+            "Scenario": r.get("scenario", SCENARIOS[0]),
+        })
+    df = pd.DataFrame(rows)
+except Exception as e:
+    st.error(f"Visningsfeil: {e}")
+    if df.empty:
             st.info("Ingen data i databasen. Last opp Excel over.")
-        else:
+    else:
             # Bruk filtrene
             m = pd.Series([True] * len(df))
             if filt_kunde:
@@ -285,7 +285,12 @@ with tab_db:
                         c3.write(str(row["Kunde"]))
                         c4.write(str(row["Adresse"]))
                         c5.write(f"{int(row['Sum forsikring']):,}".replace(",", " "))
-                        c6.write(f"EML≈ {int(row['EML (effektiv)']):,}".replace(",", " "))
+                        c6.write(
+                            f"EML≈ {int(row['EML (effektiv)']):,} "
+                            f"\n{('🟩 Manuell' if db[k].get('eml_rate_manual_on') else '⚙️ Maskinell')}"
+                            .replace(",", " ")
+                        )
+                        #)']):,}".replace(",", " "))
                         changed_include[k] = c7.checkbox("Inkl.", value=bool(row["Inkluder"]), key=f"inc_{k}")
                         changed_scenario[k] = c8.selectbox("Scen.", options=SCENARIOS, index=SCENARIOS.index(row["Scenario"]) if row["Scenario"] in SCENARIOS else 0, key=f"sce_{k}")
 
@@ -297,8 +302,8 @@ with tab_db:
                                 db[k]["updated"] = now_iso()
                         save_db_to_file(DB_FILENAME, db)
                         st.success("Valg lagret for kumulesonen.")
-    except Exception as e:
-        st.error(f"Visningsfeil: {e}")
+    #except Exception as e:
+    #st.error(f"Visningsfeil: {e}")
 
 # ----------------------------------------------------------
 # 📈 EML-SCENARIO – Beregn per EN kumulesone + MANUELL overstyring
