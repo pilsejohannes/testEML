@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import streamlit as st
 
 st.set_page_config(page_title="EML-prototype", layout="wide")
-VERSION = "0.8"
+VERSION = "0.9"
 st.title(f"EML-prototype (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -14,6 +14,7 @@ st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 # Konfig
 # ==========================================================
 DB_FILENAME = "risiko_db.json"
+SCENARIOS = ["Brann", "Skred", "Flom", "Annet"]
 
 # Forventede kolonner (case-insensitiv matching)
 EXPECTED_COLS = {
@@ -138,7 +139,6 @@ with tab_db:
     with st.expander("Forventede Excel-kolonner", expanded=False):
         st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
 
-
     up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_all")
     if up_xlsx is not None:
         try:
@@ -178,12 +178,12 @@ with tab_db:
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
-                        # Overstyringsfelter (kan brukes i detalj-editor senere)
+                        # Overstyringsfelter (kan brukes i detalj-editor eller scenario)
                         "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
                         "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
                         # Utvalg til scenario
                         "include": rec.get("include", False),
-                        "scenario": rec.get("scenario", "Standard"),
+                        "scenario": rec.get("scenario", SCENARIOS[0]),  # default Brann
                         "updated": now_iso(),
                     })
                     db[navn] = rec
@@ -221,7 +221,7 @@ with tab_db:
                 "Adresse": r.get("adresse", ""),
                 "Sum forsikring": float(r.get("sum_forsikring", 0) or 0),
                 "Inkluder": bool(r.get("include", False)),
-                "Scenario": r.get("scenario", "Standard"),
+                "Scenario": r.get("scenario", SCENARIOS[0]),
                 "EML (effektiv)": calc_eml_effective(r),
             })
         df = pd.DataFrame(rows)
@@ -242,13 +242,19 @@ with tab_db:
             # Group per kumulesone
             for kumule, grp in dfv.groupby("Kumulesone", dropna=False):
                 total_si = int(grp["Sum forsikring"].sum())
-                total_eml_inc = int(df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]
-                                     ["EML (effektiv)"].sum())
-                with st.expander(f"Kumulesone {kumule} – {len(grp)} risikoer | Sum SI: {total_si:,.0f} | Sum EML (inkluderte): {total_eml_inc:,.0f}".replace(",", " "), expanded=False):
-                    # Velg scenario for massevalg i denne kumulen
+                total_eml_inc = int(
+                    df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]["EML (effektiv)"].sum()
+                )
+                with st.expander(
+                    f"Kumulesone {kumule} – {len(grp)} risikoer | Sum SI: {total_si:,.0f} | Sum EML (inkluderte): {total_eml_inc:,.0f}".replace(",", " "),
+                    expanded=False,
+                ):
+                    # Scenario-valg for massevalg i denne kumulen
                     sc_col1, sc_col2, sc_col3 = st.columns([2, 1, 1])
                     with sc_col1:
-                        scen_label = st.text_input(f"Scenario for kumule {kumule}", value="Standard", key=f"scen_{kumule}")
+                        scen_label = st.selectbox(
+                            f"Scenario for kumule {kumule}", options=SCENARIOS, index=0, key=f"scen_{kumule}"
+                        )
                     with sc_col2:
                         if st.button("Velg ALLE i kumule", key=f"selall_{kumule}"):
                             for idx, row in grp.iterrows():
@@ -266,24 +272,26 @@ with tab_db:
                             st.experimental_rerun()
 
                     # Radvis avhuking med mer info
-                    changed: Dict[str, bool] = {}
+                    changed_include: Dict[str, bool] = {}
+                    changed_scenario: Dict[str, str] = {}
                     st.write("**Risikoer i kumulesonen:**")
                     for idx, row in grp.sort_values(["Risikonr"]).iterrows():
                         k = row["_key"]
-                        c1, c2, c3, c4, c5, c6, c7 = st.columns([1.2, 1.2, 1.2, 3, 3, 1.6, 1])
+                        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1.2, 1.2, 3, 3, 1.6, 1, 1.6])
                         c1.write(str(row["Forsnr"]))
                         c2.write(str(row["Risikonr"]))
                         c3.write(str(row["Kunde"]))
                         c4.write(str(row["Adresse"]))
                         c5.write(f"{int(row['Sum forsikring']):,}".replace(",", " "))
                         c6.write(f"EML≈ {int(row['EML (effektiv)']):,}".replace(",", " "))
-                        changed[k] = c7.checkbox("Inkl.", value=bool(row["Inkluder"]), key=f"inc_{k}")
+                        changed_include[k] = c7.checkbox("Inkl.", value=bool(row["Inkluder"]), key=f"inc_{k}")
+                        changed_scenario[k] = c8.selectbox("Scen.", options=SCENARIOS, index=SCENARIOS.index(row["Scenario"]) if row["Scenario"] in SCENARIOS else 0, key=f"sce_{k}")
 
                     if st.button("💾 Lagre utvalg i denne kumulesonen", key=f"save_{kumule}"):
-                        for k, val in changed.items():
+                        for k, val in changed_include.items():
                             if k in db:
                                 db[k]["include"] = bool(val)
-                                db[k]["scenario"] = scen_label if val else db[k].get("scenario", "Standard")
+                                db[k]["scenario"] = changed_scenario.get(k, db[k].get("scenario", SCENARIOS[0])) if val else db[k].get("scenario", SCENARIOS[0])
                                 db[k]["updated"] = now_iso()
                         save_db_to_file(DB_FILENAME, db)
                         st.success("Valg lagret for kumulesonen.")
@@ -291,15 +299,15 @@ with tab_db:
         st.error(f"Visningsfeil: {e}")
 
 # ----------------------------------------------------------
-# 📈 EML-SCENARIO – Beregn per EN kumulesone
+# 📈 EML-SCENARIO – Beregn per EN kumulesone + MANUELL overstyring
 # ----------------------------------------------------------
 with tab_scen:
-    st.subheader("Velg kumulesone og scenario for beregning")
+    st.subheader("Velg kumulesone og scenario for beregning og overstyring")
 
     # Finn tilgjengelige kumulesoner
     kumuler = sorted({r.get("kumulesone", "") for r in db.values() if isinstance(r, dict)})
     sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler)
-    scen = st.text_input("Scenario-navn", value="Standard")
+    scen = st.selectbox("Scenario", options=SCENARIOS, index=0)
 
     if not sel_kumule:
         st.info("Velg en kumulesone for å beregne EML.")
@@ -307,6 +315,10 @@ with tab_scen:
         try:
             import pandas as pd
             rows = []
+            # For lagring av endringer
+            changed_manual_on: Dict[str, bool] = {}
+            changed_manual_rate: Dict[str, float] = {}
+
             for k, r in db.items():
                 if not isinstance(r, dict):
                     continue
@@ -314,33 +326,63 @@ with tab_scen:
                     continue
                 if not bool(r.get("include", False)):
                     continue
-                if str(r.get("scenario", "Standard")) != scen:
+                if str(r.get("scenario", SCENARIOS[0])) != scen:
                     continue
-                rows.append({
-                    "Forsnr": r.get("forsnr", ""),
-                    "Risikonr": r.get("risikonr", ""),
-                    "Kunde": r.get("kundenavn", ""),
-                    "Adresse": r.get("adresse", ""),
-                    "Sum forsikring": float(r.get("sum_forsikring", 0) or 0),
-                    "Sats (%)": round(calc_eml_rate_effective(r) * 100, 2),
-                    "EML (effektiv)": calc_eml_effective(r),
-                })
-            df = pd.DataFrame(rows)
-            if df.empty:
-                st.info("Ingen markerte risikoer i denne kumulesonen for valgt scenario.")
-            else:
-                st.markdown("### Risikoer i valgt kumulesone")
-                st.dataframe(df.sort_values(["Risikonr"]), use_container_width=True)
-                total_eml = int(df["EML (effektiv)"].sum())
-                total_si = int(df["Sum forsikring"].sum())
+
+                # Nåværende verdier
+                si = float(r.get("sum_forsikring", 0) or 0)
+                rate_machine = calc_eml_rate_machine(r)
+                manual_on_default = bool(r.get("eml_rate_manual_on", False))
+                manual_rate_default = float(r.get("eml_rate_manual", 0.0)) * 100.0
+
+                c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1.2, 2.2, 3, 1.6, 1.6, 1.2, 1.8])
+                c1.write(str(r.get("forsnr", "")))
+                c2.write(str(r.get("risikonr", "")))
+                c3.write(str(r.get("kundenavn", "")))
+                c4.write(str(r.get("adresse", "")))
+                c5.write(f"SI {int(si):,}".replace(",", " "))
+                c6.write(f"Mask.sats {rate_machine*100:.1f}%")
+                changed_manual_on[k] = c7.checkbox("Overstyr", value=manual_on_default, key=f"ovr_{k}")
+                changed_manual_rate[k] = c8.number_input(
+                    "Manuell %", min_value=0.0, max_value=100.0, step=0.5, value=manual_rate_default, key=f"mrate_{k}"
+                )
+
+                # Beregn EML live basert på inputs
+                eff_rate = (changed_manual_rate[k] / 100.0) if changed_manual_on[k] else rate_machine
+                eml_val = int(round(si * eff_rate))
+                st.markdown(f"**EML (effektiv):** {eml_val:,.0f} NOK".replace(",", " "))
+                st.markdown("---")
+
+            if st.button("💾 Lagre manuelle overstyringer for denne kumulesonen"):
+                for k, on_val in changed_manual_on.items():
+                    if k in db:
+                        db[k]["eml_rate_manual_on"] = bool(on_val)
+                        db[k]["eml_rate_manual"] = float(changed_manual_rate.get(k, 0.0)) / 100.0
+                        db[k]["updated"] = now_iso()
+                save_db_to_file(DB_FILENAME, db)
+                st.success("Overstyringer lagret.")
+
+            # Etter visning av alle: totaler
+            # Bygg DF på nytt for totalberegning
+            rows_tot = []
+            for k, r in db.items():
+                if not isinstance(r, dict):
+                    continue
+                if str(r.get("kumulesone", "")) != str(sel_kumule):
+                    continue
+                if not bool(r.get("include", False)):
+                    continue
+                if str(r.get("scenario", SCENARIOS[0])) != scen:
+                    continue
+                si = float(r.get("sum_forsikring", 0) or 0)
+                rate = calc_eml_rate_effective(r)
+                rows_tot.append({"SI": si, "EML": int(round(si * rate))})
+            import pandas as pd
+            dft = pd.DataFrame(rows_tot)
+            if not dft.empty:
+                total_si = int(dft["SI"].sum())
+                total_eml = int(dft["EML"].sum())
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
-
-                st.download_button(
-                    "⬇️ Last ned scenario (CSV)",
-                    data=df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"scenario_{sel_kumule}_{scen}.csv",
-                    mime="text/csv",
-                )
         except Exception as e:
-            st.error(f"Klarte ikke å beregne scenario: {e}")
+            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
