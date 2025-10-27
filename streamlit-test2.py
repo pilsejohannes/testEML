@@ -5,22 +5,20 @@ from typing import Dict, Any, List, Tuple, Optional
 import streamlit as st
 
 # ==========================================================
-# EML-prototype – v0.5 (kumule-summer + EML-sats)
+# EML-prototype – v0.6 (database→scenario)
 # ----------------------------------------------------------
 # Nytt i denne versjonen:
-# - EML beregnes via en EML-sats (% av forsikringssum)
-#   * Maskinell sats (veiledende) avledet av faktorene
-#   * Manuell overstyring av sats (prosent) – tydelig kildeangivelse
-#   * (Bakoverkompatibel) Manuell overstyring av EML-beløp hvis eksisterende felt er satt
-# - Kumulevis oppsummering: summerer EML (effektiv) pr. kumulesone
-# - Kumule-listing viser alle risikoer i soner over terskel (ikke bare store risikoer)
-# - Robust Excel-lesing (openpyxl) og tydelig feedback
+# - Excel: importer ALLE rader til databasen (ingen forhåndsfiltrering på terskel)
+# - Database-visning: søk, filtrer (inkludert/ekskludert), massevalg per kumulesone
+# - Scenario-beregning: velg «scenario» (navn/label), summer EML (effektiv) KUN for markerte risikoer
+# - To tydelige faner: «📚 Database» og «📈 EML-scenario»
 # ==========================================================
 
 st.set_page_config(page_title="EML-prototype", layout="wide")
+start_mode = None  # legacy variabel – beholdt for kompatibilitet
 
 from pathlib import Path
-VERSION = "0.5"
+VERSION = "0.6"
 st.title(f"EML-prototype (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -278,15 +276,223 @@ with st.sidebar:
         help="Vis kumulesoner der sum forsikring ≥ terskel. Default 800 MNOK.")
 
 # ------------------------------
-# Startmodus-velger
+# Faner for arbeidsflyt
 # ------------------------------
-start_mode = st.radio(
-    "Velg startmodus",
-    ["Kumulesoner fra Excel", "Manuell registrering"],
-    horizontal=True,
-)
+tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"]) 
 
 # ==========================================================
+# 📚 DATABASE – Import + redigering/filtrering/utvalg
+# ==========================================================
+with tab_db:
+    st.subheader("1) Last opp Excel og importer til databasen")
+    st.caption("Importer alle rader – du velger senere hva som skal inngå i scenarioet.")
+
+with st.expander("Forventede Excel-kolonner", expanded=False):
+    st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
+
+
+    up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_uploader_all")
+
+    if up_xlsx is not None:
+        try:
+            import pandas as pd, io
+            _bytes = up_xlsx.read()
+            df = pd.read_excel(io.BytesIO(_bytes), engine="openpyxl")
+            up_xlsx.seek(0)
+
+            df.columns = [str(c).strip() for c in df.columns]
+            lower_to_orig = {c.lower(): c for c in df.columns}
+
+            def col(name_key: str) -> Optional[str]:
+                expected = EXPECTED_COLS[name_key]
+                return lower_to_orig.get(expected.lower())
+
+            required = ["kumulenr", "risikonr"]
+            missing = [EXPECTED_COLS[k] for k in required if col(k) is None]
+            if missing:
+                st.error("Mangler påkrevde kolonner: " + ", ".join(missing))
+            else:
+                st.success(f"Lest {len(df)} rader fra Excel – kolonner: {list(df.columns)}")
+
+                # Importer ALLE rader som egne objekter i db
+                imported = 0
+                for _, row in df.iterrows():
+                    try:
+                        kumule = str(row.get(col("kumulenr"), ""))
+                        risiko = str(row.get(col("risikonr"), ""))
+                        adresse = str(row.get(col("adresse"), ""))
+                        navn = f"{kumule}-{risiko}-{adresse}".strip("-")
+
+                        rec = migrate_record(db.get(navn) or default_record())
+                        rec["objektnavn"] = str(row.get(col("kundenavn"), navn))
+                        rec["adresse"] = adresse
+                        rec["kundenavn"] = str(row.get(col("kundenavn"), ""))
+                        rec["risikonr"] = risiko
+                        rec["kumulesone"] = kumule
+
+                        # SI fra Tariffsum (fallback: EML sum -> Kumulesum)
+                        si_val = 0.0
+                        for key_try in [col("tariffsum"), col("eml_sum"), col("kumulesum")]:
+                            if key_try and key_try in row and not pd.isna(row[key_try]):
+                                try:
+                                    si_val = float(row[key_try])
+                                    break
+                                except Exception:
+                                    pass
+                        rec["sum_forsikring"] = si_val
+
+                        rec.setdefault("include", False)         # markeres senere for scenario
+                        rec.setdefault("scenario", "Standard")   # label for valgt scenario
+                        rec["updated"] = now_iso()
+                        db[navn] = rec
+                        imported += 1
+                    except Exception:
+                        pass
+                save_db_to_file(DB_FILENAME, db)
+                st.success(f"Importert {imported} objekt(er) til databasen.")
+        except Exception as e:
+            st.error(f"Kunne ikke lese Excel: {e}")
+
+    st.markdown("---")
+    st.subheader("2) Filtrer og marker hvilke som skal inngå i scenario")
+
+    # Filterpanel
+    colf1, colf2, colf3, colf4 = st.columns([1,1,1,2])
+    with colf1:
+        status_filter = st.selectbox("Vis", ["Alle", "Kun inkluderte", "Kun ekskluderte"], index=0)
+    with colf2:
+        scenario_label = st.text_input("Scenario-navn", value="Standard")
+    with colf3:
+        kumule_filter = st.text_input("Filter: Kumulesone inneholder", value="")
+    with colf4:
+        search = st.text_input("Søk (risikonr/kunde/adresse)", value="")
+
+    # Bygg DataFrame
+    try:
+        import pandas as pd
+        rows = []
+        for name, r in db.items():
+            if not isinstance(r, dict):
+                continue
+            rows.append({
+                "_key": name,
+                "Kumulesone": r.get("kumulesone", ""),
+                "Risikonr": r.get("risikonr", ""),
+                "Kunde": r.get("kundenavn", ""),
+                "Adresse": r.get("adresse", ""),
+                "Sum forsikring": r.get("sum_forsikring", 0),
+                "Inkluder": bool(r.get("include", False)),
+                "Scenario": r.get("scenario", "Standard"),
+                "EML (effektiv)": calc_eml_effective(r),
+            })
+        df_all = pd.DataFrame(rows)
+
+        if not df_all.empty:
+            # Filtre
+            m = pd.Series([True]*len(df_all))
+            if status_filter == "Kun inkluderte":
+                m &= df_all["Inkluder"]
+            elif status_filter == "Kun ekskluderte":
+                m &= ~df_all["Inkluder"]
+            if kumule_filter:
+                m &= df_all["Kumulesone"].astype(str).str.contains(kumule_filter, case=False, na=False)
+            if search:
+                s = search
+                m &= (
+                    df_all["Risikonr"].astype(str).str.contains(s, case=False, na=False) |
+                    df_all["Kunde"].astype(str).str.contains(s, case=False, na=False) |
+                    df_all["Adresse"].astype(str).str.contains(s, case=False, na=False)
+                )
+            df_view = df_all[m].copy()
+
+            st.dataframe(df_view.sort_values(["Kumulesone", "Risikonr"]), use_container_width=True)
+
+            # Massehandlinger
+            st.markdown("**Massevalg:**")
+            colm1, colm2, colm3 = st.columns(3)
+            with colm1:
+                target_kumule = st.text_input("Kumulesone for massevalg", value="")
+            with colm2:
+                if st.button("Velg ALLE i kumulesone") and target_kumule:
+                    for k, r in db.items():
+                        if isinstance(r, dict) and str(r.get("kumulesone", "")) == target_kumule:
+                            r["include"] = True
+                            r["scenario"] = scenario_label
+                    save_db_to_file(DB_FILENAME, db)
+                    st.experimental_rerun()
+            with colm3:
+                if st.button("Fjern ALLE i kumulesone") and target_kumule:
+                    for k, r in db.items():
+                        if isinstance(r, dict) and str(r.get("kumulesone", "")) == target_kumule:
+                            r["include"] = False
+                    save_db_to_file(DB_FILENAME, db)
+                    st.experimental_rerun()
+
+            st.markdown("---")
+            st.caption("Tips: Marker enkeltobjekter direkte på detaljsiden (Manuell registrering) for finjustering.")
+        else:
+            st.info("Ingen data i databasen ennå. Last opp Excel over.")
+    except Exception:
+        st.info("Pandas ikke tilgjengelig – tabellvisning hoppet over.")
+
+# ==========================================================
+# 📈 EML-SCENARIO – utvalg + beregning/summer pr. kumule
+# ==========================================================
+with tab_scen:
+    st.subheader("Velg scenario og beregn")
+    chosen_scenario = st.text_input("Scenario-navn", value="Standard", key="scenario_calc")
+
+    # Bygg DF av KUN inkluderte i valgt scenario
+    try:
+        import pandas as pd
+        rows_inc = []
+        for name, r in db.items():
+            if not isinstance(r, dict):
+                continue
+            if not bool(r.get("include", False)):
+                continue
+            if str(r.get("scenario", "Standard")) != chosen_scenario:
+                continue
+            rows_inc.append({
+                "Kumulesone": r.get("kumulesone", ""),
+                "Risikonr": r.get("risikonr", ""),
+                "Kunde": r.get("kundenavn", ""),
+                "Adresse": r.get("adresse", ""),
+                "Sum forsikring": r.get("sum_forsikring", 0),
+                "Sats (effektiv %)": round(calc_eml_rate_effective(r)*100, 2),
+                "EML (effektiv)": calc_eml_effective(r),
+                "Kilde": eml_source_label(r),
+            })
+        df_inc = pd.DataFrame(rows_inc)
+
+        if df_inc.empty:
+            st.info("Ingen risikoer er markert for dette scenarioet. Gå til fanen ‘📚 Database’ og marker ‘Inkluder’.")
+        else:
+            st.markdown("### Detaljer (inkluderte risikoer)")
+            st.dataframe(df_inc.sort_values(["Kumulesone", "Risikonr"]), use_container_width=True)
+
+            st.markdown("### Kumule-summer")
+            grp = df_inc.groupby("Kumulesone", dropna=False)["EML (effektiv)"].sum().reset_index()
+            grp = grp.sort_values("EML (effektiv)", ascending=False)
+            st.dataframe(grp, use_container_width=True)
+
+            total = int(df_inc["EML (effektiv)"].sum())
+            st.metric("Total EML i scenario", f"{total:,.0f}".replace(",", " "))
+
+            st.download_button(
+                "⬇️ Last ned detaljer (CSV)",
+                data=df_inc.to_csv(index=False).encode("utf-8"),
+                file_name=f"scenario_{chosen_scenario}_detaljer.csv",
+                mime="text/csv",
+            )
+            st.download_button(
+                "⬇️ Last ned kumule-summer (CSV)",
+                data=grp.to_csv(index=False).encode("utf-8"),
+                file_name=f"scenario_{chosen_scenario}_kumule.csv",
+                mime="text/csv",
+            )
+    except Exception:
+        st.info("Pandas ikke tilgjengelig – tabellvisning/CSV hoppet over.")
 # MODUS 1: Kumulesoner fra Excel
 # ==========================================================
 if start_mode == "Kumulesoner fra Excel":
