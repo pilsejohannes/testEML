@@ -6,6 +6,10 @@ from typing import Dict, Any, Optional
 import streamlit as st
 
 st.set_page_config(page_title="EML-prototype", layout="wide")
+import streamlit as st, sys
+from pathlib import Path
+st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
+
 VERSION = "1.0"
 st.title(f"EML-prototype (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
