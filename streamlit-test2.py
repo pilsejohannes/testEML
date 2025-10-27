@@ -256,6 +256,10 @@ if do_import and up_xlsx is not None:
         filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
     with colf3:
         filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
+# Sikre at filtre finnes (default tomme)
+filt_kunde = st.session_state.get("filt_kunde", "")
+filt_adresse = st.session_state.get("filt_adresse", "")
+filt_kumule = st.session_state.get("filt_kumule", "")
 
     # Bygg DataFrame innenfor appen
 # Bygg DataFrame innenfor appen (robust)
