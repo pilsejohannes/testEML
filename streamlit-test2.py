@@ -9,6 +9,7 @@ st.set_page_config(page_title="EML-prototype", layout="wide")
 import streamlit as st, sys
 from pathlib import Path
 st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
+
 #def force_rerun():
 #    # Streamlit >= 1.36
 #    if hasattr(st, "rerun"):
@@ -44,6 +45,20 @@ EXPECTED_COLS = {
 # ==========================================================
 # Hjelpere
 # ==========================================================
+
+import hashlib
+
+def md5_bytes(b: bytes) -> str:
+    h = hashlib.md5()
+    h.update(b)
+    return h.hexdigest()
+def force_rerun():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    #elif hasattr(st, "experimental_rerun"):
+    #    st.experimental_rerun()
+    else:
+        st.session_state["_force_rerun_ts"] = now_iso()
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -151,19 +166,36 @@ tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"])
 # ----------------------------------------------------------
 with tab_db:
     st.subheader("1) Last opp Excel og importer alle rader")
-    with st.expander("Forventede Excel-kolonner", expanded=False):
-        st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
 
-    up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_all")
-    if up_xlsx is not None:
-        try:
-            import pandas as pd, io
-            df = pd.read_excel(io.BytesIO(up_xlsx.read()), engine="openpyxl")
+with st.expander("Forventede Excel-kolonner", expanded=False):
+    st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
+
+up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_all")
+
+# Init import-state
+if "last_import_md5" not in st.session_state:
+    st.session_state.last_import_md5 = None
+
+# Vis knapp kun hvis fil er valgt
+can_import = up_xlsx is not None
+do_import = st.button("📥 Importer fra valgt fil", disabled=not can_import)
+
+if do_import and up_xlsx is not None:
+    try:
+        import pandas as pd, io
+        raw = up_xlsx.read()
+        file_hash = md5_bytes(raw)
+
+        # Hindre dobbelt-import av samme fil
+        if file_hash == st.session_state.last_import_md5:
+            st.info("Samme fil er allerede importert. Ingen endringer.")
+        else:
+            df = pd.read_excel(io.BytesIO(raw), engine="openpyxl")
+            st.caption(f"📄 Kolonner funnet: {list(df.columns)}")
+
             df.columns = [str(c).strip() for c in df.columns]
             lower = {c.lower(): c for c in df.columns}
-
-            def col(k: str) -> Optional[str]:
-                return lower.get(EXPECTED_COLS[k].lower())
+            def col(k: str) -> Optional[str]: return lower.get(EXPECTED_COLS[k].lower())
 
             required = ["kumulenr", "risikonr"]
             missing = [EXPECTED_COLS[k] for k in required if col(k) is None]
@@ -177,9 +209,9 @@ with tab_db:
                     forsnr = str(row.get(col("forsnr"), ""))
                     adresse = str(row.get(col("adresse"), ""))
                     kunde = str(row.get(col("kundenavn"), ""))
+
                     navn = f"{kumule}-{risiko}-{adresse}".strip("-")
 
-                    # Forsikringssum fra Tariffsum (kan utvides)
                     try:
                         si = float(row.get(col("tariffsum"), 0) or 0)
                     except Exception:
@@ -193,22 +225,25 @@ with tab_db:
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
-                        # Overstyringsfelter (kan brukes i detalj-editor eller scenario)
                         "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
                         "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
-                        # Utvalg til scenario
                         "include": rec.get("include", False),
-                        "scenario": rec.get("scenario", SCENARIOS[0]),  # default Brann
+                        "scenario": rec.get("scenario", SCENARIOS[0]),
                         "updated": now_iso(),
                     })
                     db[navn] = rec
                     imported += 1
-                save_db_to_file(DB_FILENAME, db)
-                st.success(f"Importert {imported} rader til databasen.")
-                st.rerun()
 
-        except Exception as e:
-            st.error(f"Kunne ikke lese Excel: {e}")
+                ok, err = save_db_to_file(DB_FILENAME, db)
+                if ok:
+                    st.success(f"Importert {imported} rader til databasen.")
+                    st.session_state.last_import_md5 = file_hash
+                    # Ikke rerun automatisk; la brukeren se status og tabell under.
+                else:
+                    st.error(f"Kunne ikke lagre DB: {err}")
+    except Exception as e:
+        st.error(f"Kunne ikke lese Excel: {e}")
+
 
     st.markdown("---")
     st.subheader("2) Filtrer og velg per kumulesone")
