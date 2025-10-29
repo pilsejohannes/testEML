@@ -465,7 +465,7 @@ with tab_scen:
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
                 st.subheader("Legg til risiko manuelt")
-                except Exception:
+        except Exception:
     return {"risikoer": [], "kumuler": []}
 
 with st.form("manual_add_form"):
