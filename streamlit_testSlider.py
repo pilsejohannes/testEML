@@ -425,117 +425,139 @@ except Exception as e:
 # Sørg for synlige feildetaljer
 st.set_option("client.showErrorDetails", True)
 
+# --- KONFIG for scenario "Brann" ---
+BRANN_RISIKO_CHOICES = ["Høy", "Middels", "Lav"]
+BRANN_SPREDNING_CHOICES = ["Stor", "Middels", "Liten"]
+BRANN_SLUCKE_CHOICES = ["Lang", "Middels", "Kort"]
+
+def _scenario_key(scen: str, kumule: str) -> str:
+    # unik nøkkel for å lagre scenariobeskrivelse og meta
+    return f"{scen}::{kumule}".strip()
+
 with tab_scen:
-    st.subheader("Velg kumulesone og scenario for beregning og overstyring")
+    st.subheader("EML-scenario – Brann")
 
-    # --- Defensive logging ---
-    st.write("DEBUG: type(db)=", type(db).__name__)
-    if not isinstance(db, dict):
-        st.error("DB er ikke et dict. Sjekk load_db_from_file().")
-        st.stop()
-
-    # Finn tilgjengelige kumulesoner (tomme filtreres bort)
-    try:
-        kumuler = sorted({str(r.get("kumulesone", "")).strip()
-                          for r in db.values() if isinstance(r, dict)} - {""})
-    except Exception as e:
-        st.error("Klarte ikke å lese kumuler fra db.")
-        st.exception(e)
-        st.stop()
-
-    sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler, index=0)
-    scen = st.selectbox("Scenario", options=SCENARIOS, index=0)
-
-    # Til bruk i skjemaet under
-    kumule_liste = [""] + kumuler
+    # 1) Velg kumulesone og scenario
+    kumuler = sorted({str(r.get("kumulesone", "")).strip()
+                      for r in db.values() if isinstance(r, dict)} - {""})
+    sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler)
+    scen = st.selectbox("Scenario", options=["Brann"], index=0)
 
     if not sel_kumule:
-        st.info("Velg en kumulesone for å beregne EML.")
-    else:
-        # ---------- Beregning/visning per risiko ----------
-        try:
-            changed_manual_on: Dict[str, bool] = {}
-            changed_manual_rate: Dict[str, float] = {}
+        st.info("Velg en kumulesone for å vurdere scenarioet.")
+        st.stop()
 
-            # Kopi av items for å unngå mutasjon-while-iterasjon-problemer
-            db_items = list(db.items())
+    # 2) Hent eksisterende scenariobeskrivelse (lagres separat fra risikoene)
+    meta_key = _scenario_key(scen, sel_kumule)
+    if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
+        db["_scenario_meta"] = {}
 
-            for k, r in db_items:
-                if not isinstance(r, dict):
-                    continue
-                if str(r.get("kumulesone", "")) != str(sel_kumule):
-                    continue
-                if not bool(r.get("include", False)):
-                    continue
-                if str(r.get("scenario", SCENARIOS[0])) != scen:
-                    continue
+    existing_desc = ""
+    if meta_key in db["_scenario_meta"]:
+        existing_desc = db["_scenario_meta"][meta_key].get("beskrivelse", "")
 
-                si = float(r.get("sum_forsikring", 0) or 0)
-                try:
-                    rate_machine = calc_eml_rate_machine(r)
-                except Exception as e:
-                    rate_machine = 0.0
-                    st.warning(f"Kunne ikke beregne maskin-sats for {k}: {e}")
+    st.markdown("**Scenariobeskrivelse (lagres, vises ikke på forsiden)**")
+    scenariobeskrivelse = st.text_area("Beskrivelse", value=existing_desc, placeholder="Kort beskrivelse av forutsetninger, særskilte forhold, tiltak, osv.", height=120, label_visibility="collapsed")
 
-                manual_on_default = bool(r.get("eml_rate_manual_on", False))
-                manual_rate_default = float(r.get("eml_rate_manual", 0.0)) * 100.0
+    # 3) Filtrer risikoer: kun inkluderte i valgt kumule + scenario
+    #    NB: 'scenario' på risiko brukes bare som filter/tag – her jobber vi med scenarioet "Brann".
+    filtered = []
+    for k, r in db.items():
+        if not isinstance(r, dict):
+            continue
+        if str(r.get("kumulesone", "")) != sel_kumule:
+            continue
+        if not bool(r.get("include", False)):
+            continue
+        # Hvis du ønsker at bare de som allerede har scenario=="Brann" skal vises, ta med linja under:
+        # if str(r.get("scenario", "Brann")) != "Brann":
+        #     continue
+        filtered.append((k, r))
 
-                c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1.2, 2.2, 3, 1.6, 1.6, 1.2, 1.8])
-                c1.write(str(r.get("forsnr", "")))
-                c2.write(str(r.get("risikonr", "")))
-                c3.write(str(r.get("kundenavn", "")))
-                c4.write(str(r.get("adresse", "")))
-                c5.write(f"SI {int(si):,}".replace(",", " "))
-                c6.write(f"Mask.sats {rate_machine*100:.1f}%")
-                changed_manual_on[k] = c7.checkbox("Overstyr", value=manual_on_default, key=f"ovr_{k}")
-                changed_manual_rate[k] = c8.number_input(
-                    "Manuell %", min_value=0.0, max_value=100.0, step=0.5,
-                    value=manual_rate_default, key=f"mrate_{k}"
-                )
+    if not filtered:
+        st.warning("Ingen risikoer med `include=True` i denne kumulesonen (og scenariofilter).")
+        st.stop()
 
-                eff_rate = (changed_manual_rate[k] / 100.0) if changed_manual_on[k] else rate_machine
-                eml_val = int(round(si * eff_rate))
-                st.markdown(f"**EML (effektiv):** {eml_val:,.0f} NOK".replace(",", " "))
-                st.markdown("---")
+    # 4) Skjema per risiko for scenario-parametre
+    st.write(f"**{len(filtered)} risiko(er) i {sel_kumule}**")
+    changed = {}
 
-            if st.button("💾 Lagre manuelle overstyringer for denne kumulesonen"):
-                for k, on_val in changed_manual_on.items():
-                    if k in db and isinstance(db[k], dict):
-                        db[k]["eml_rate_manual_on"] = bool(on_val)
-                        db[k]["eml_rate_manual"] = float(changed_manual_rate.get(k, 0.0)) / 100.0
-                        db[k]["updated"] = now_iso()
-                save_db_to_file(DB_FILENAME, db)
-                st.success("Overstyringer lagret.")
+    for k, r in filtered:
+        st.markdown("---")
+        colA, colB, colC, colD, colE = st.columns([1.2, 1.2, 2.2, 2.2, 2.2])
 
-            # ---------- Totaler ----------
-            rows_tot = []
-            for k, r in db_items:
-                if not isinstance(r, dict):
-                    continue
-                if str(r.get("kumulesone", "")) != str(sel_kumule):
-                    continue
-                if not bool(r.get("include", False)):
-                    continue
-                if str(r.get("scenario", SCENARIOS[0])) != scen:
-                    continue
-                si = float(r.get("sum_forsikring", 0) or 0)
-                try:
-                    rate = calc_eml_rate_effective(r)
-                except Exception as e:
-                    rate = 0.0
-                rows_tot.append({"SI": si, "EML": int(round(si * rate))})
+        forsnr = str(r.get("forsnr", ""))
+        risikonr = str(r.get("risikonr", ""))
+        kundenavn = str(r.get("kundenavn", ""))
+        adresse = str(r.get("adresse", ""))
 
-            dft = pd.DataFrame(rows_tot)
-            if not dft.empty:
-                total_si = int(dft["SI"].sum())
-                total_eml = int(dft["EML"].sum())
-                st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
-                st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
+        colA.write(f"**{forsnr}**")
+        colB.write(f"{risikonr}")
+        colC.write(kundenavn or "–")
+        colD.write(adresse or "–")
+        si = float(r.get("sum_forsikring", 0) or 0)
+        colE.write(f"SI: {int(si):,} NOK".replace(",", " "))
 
-        except Exception as e:
-            st.error("Klarte ikke å beregne/oppdatere scenario.")
-            st.exception(e)   # viser full traceback
-            st.stop()
+        # Hent ev. tidligere lagrede valg for "Brann"
+        brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
+        risiko_default = brann_cfg.get("risiko_for_brann", "Middels")
+        spredning_default = brann_cfg.get("spredning_av_brann", "Middels")
+        slucke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
+
+        c1, c2, c3 = st.columns(3)
+        risiko_val = c1.selectbox(
+            "Risiko for brann", BRANN_RISIKO_CHOICES,
+            index=BRANN_RISIKO_CHOICES.index(risiko_default) if risiko_default in BRANN_RISIKO_CHOICES else 1,
+            key=f"brann_risiko_{k}"
+        )
+        spredning_val = c2.selectbox(
+            "Spredning av brann", BRANN_SPREDNING_CHOICES,
+            index=BRANN_SPREDNING_CHOICES.index(spredning_default) if spredning_default in BRANN_SPREDNING_CHOICES else 1,
+            key=f"brann_spredning_{k}"
+        )
+        slucke_val = c3.selectbox(
+            "Tid før slukkeinnsats", BRANN_SLUCKE_CHOICES,
+            index=BRANN_SLUCKE_CHOICES.index(slucke_default) if slucke_default in BRANN_SLUCKE_CHOICES else 1,
+            key=f"brann_slucke_{k}"
+        )
+
+        # Buffer endringer (skrives først når bruker trykker "Lagre …")
+        changed[k] = {
+            "brann": {
+                "risiko_for_brann": risiko_val,
+                "spredning_av_brann": spredning_val,
+                "tid_for_slukkeinnsats": slucke_val,
+                "updated": now_iso(),
+            }
+        }
+
+    # 5) Lagre scenariobeskrivelse + pr-risiko scenariovalg
+    col_save1, col_save2 = st.columns([1, 2])
+    if col_save1.button("💾 Lagre scenario (Brann) for denne kumulesonen"):
+        # Meta (beskrivelse) – ligger i separat nøkkel som ikke forstyrrer forsiden
+        db["_scenario_meta"][meta_key] = {
+            "scenario": scen,
+            "kumulesone": sel_kumule,
+            "beskrivelse": scenariobeskrivelse,
+            "updated": now_iso(),
+            "updated_by": st.session_state.get("bruker", ""),
+        }
+
+        # Lagre per risiko (under nøkkel "brann")
+        for k, patch in changed.items():
+            if k in db and isinstance(db[k], dict):
+                # slå sammen med eksisterende data
+                existing = db[k].get("brann", {})
+                if not isinstance(existing, dict):
+                    existing = {}
+                existing.update(patch["brann"])
+                db[k]["brann"] = existing
+                db[k]["updated"] = now_iso()
+
+        save_db_to_file(DB_FILENAME, db)
+        st.success("Scenario 'Brann' lagret for valgt kumulesone.")
+        # st.rerun()  # valgfritt
+
 
     # ---------- Skjema: Legg til risiko manuelt ----------
    # ---------- Skjema: Legg til risiko manuelt (lagrer på toppnivå i db) ----------
