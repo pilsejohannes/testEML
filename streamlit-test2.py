@@ -499,6 +499,8 @@ with st.form("manual_add_form"):
         db["risikoer"].append(ny_risiko)
         save_db_to_file(DB_FILENAME, db)
         st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
+        except Exception:
+    return {"risikoer": [], "kumuler": []}
 
         except Exception as e:
             st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
