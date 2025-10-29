@@ -47,6 +47,7 @@ EXPECTED_COLS = {
 # ==========================================================
 
 import hashlib
+from typing import Dict
 
 def md5_bytes(b: bytes) -> str:
     h = hashlib.md5()
@@ -381,6 +382,11 @@ except Exception as e:
 # ----------------------------------------------------------
 # 📈 EML-SCENARIO – Beregn per EN kumulesone + MANUELL overstyring
 # ----------------------------------------------------------
+#
+#from datetime import date
+#import pandas as pd
+#import streamlit as st
+
 with tab_scen:
     st.subheader("Velg kumulesone og scenario for beregning og overstyring")
 
@@ -389,11 +395,13 @@ with tab_scen:
     sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler)
     scen = st.selectbox("Scenario", options=SCENARIOS, index=0)
 
+    # Gjør kumule-liste tilgjengelig for skjemaet nedenfor
+    kumule_liste = [""] + kumuler
+
     if not sel_kumule:
         st.info("Velg en kumulesone for å beregne EML.")
     else:
         try:
-            import pandas as pd
             rows = []
             # For lagring av endringer
             changed_manual_on: Dict[str, bool] = {}
@@ -443,7 +451,6 @@ with tab_scen:
                 st.success("Overstyringer lagret.")
 
             # Etter visning av alle: totaler
-            # Bygg DF på nytt for totalberegning
             rows_tot = []
             for k, r in db.items():
                 if not isinstance(r, dict):
@@ -457,51 +464,60 @@ with tab_scen:
                 si = float(r.get("sum_forsikring", 0) or 0)
                 rate = calc_eml_rate_effective(r)
                 rows_tot.append({"SI": si, "EML": int(round(si * rate))})
-            import pandas as pd
+
             dft = pd.DataFrame(rows_tot)
             if not dft.empty:
                 total_si = int(dft["SI"].sum())
                 total_eml = int(dft["EML"].sum())
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
-                st.subheader("Legg til risiko manuelt")
-        except Exception:
-            return {"risikoer": [], "kumuler": []}
 
-with st.form("manual_add_form"):
-    forsikringsnummer = st.text_input("Forsikringsnummer")
-    risikonummer = st.text_input("Risikonummer (valgfritt)")
-    adresse = st.text_input("Adresse / sted")
-    postnummer = st.text_input("Postnummer")
-    kommune = st.text_input("Kommune")
-    latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
-    longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
-    beskrivelse = st.text_area("Beskrivelse av objekt / risiko")
-    eml_beregnet = datetime.date.today()
-    beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
-    kumule_id = st.selectbox("Legg til i kumule", kumule_liste)  # hentet fra eksisterende liste
-    
-    submitted = st.form_submit_button("Legg til risiko")
-    if submitted:
-        ny_risiko = {
-            "forsikringsnummer": forsikringsnummer,
-            "risikonummer": risikonummer,
-            "adresse": adresse,
-            "postnummer": postnummer,
-            "kommune": kommune,
-            "latitude": latitude,
-            "longitude": longitude,
-            "beskrivelse": beskrivelse,
-            "eml_beregnet": str(eml_beregnet),
-            "beregnet_av": beregnet_av,
-            "kumule_id": kumule_id,
-            "kilde": "manuell",
-        }
-        # lagre til database
-        db["risikoer"].append(ny_risiko)
-        save_db_to_file(DB_FILENAME, db)
-        st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
-        
+            # Flytt subheader hit for å alltid vise skjemaet under
+            st.subheader("Legg til risiko manuelt")
 
-#        except Exception as e:
-#            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
+        except Exception as e:
+            # ⛔️ Ikke bruk 'return' i toppnivå – vis feilen og fortsett
+            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
+
+    # === Skjema for manuell risiko-tillegg (ligger i samme tab) ===
+    with st.form("manual_add_form"):
+        forsikringsnummer = st.text_input("Forsikringsnummer")
+        risikonummer = st.text_input("Risikonummer (valgfritt)")
+        adresse = st.text_input("Adresse / sted")
+        postnummer = st.text_input("Postnummer")
+        kommune = st.text_input("Kommune")
+        latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
+        longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
+        beskrivelse = st.text_area("Beskrivelse av objekt / risiko")
+        eml_beregnet = date.today()
+        beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
+
+        # Forvalg: sett valgt kumule fra selectbox over, hvis satt
+        default_index = kumule_liste.index(sel_kumule) if sel_kumule in kumule_liste else 0
+        kumule_id = st.selectbox("Legg til i kumule", kumule_liste, index=default_index)
+
+        submitted = st.form_submit_button("Legg til risiko")
+        if submitted:
+            # Sørg for at containeren finnes
+            if "risikoer" not in db or not isinstance(db["risikoer"], list):
+                db["risikoer"] = []
+
+            ny_risiko = {
+                "forsikringsnummer": forsikringsnummer,
+                "risikonummer": risikonummer,
+                "adresse": adresse,
+                "postnummer": postnummer,
+                "kommune": kommune,
+                "latitude": latitude,
+                "longitude": longitude,
+                "beskrivelse": beskrivelse,
+                "eml_beregnet": str(eml_beregnet),
+                "beregnet_av": beregnet_av,
+                "kumule_id": kumule_id,
+                "kilde": "manuell",
+            }
+
+            db["risikoer"].append(ny_risiko)
+            save_db_to_file(DB_FILENAME, db)
+            st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
+            st.rerun()  # valgfritt: oppdatér tabellen umiddelbart
