@@ -526,6 +526,9 @@ with tab_scen:
                     "updated": now_iso(),
                 }
             }
+                # EML-metadata (nye felt i databasen)
+    eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
+    eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
 
         submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
 
@@ -582,9 +585,7 @@ with st.form("manual_add_form"):
     #longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
     beskrivelse = st.text_area("Beskrivelse (valgfritt)", value="")
 
-    # EML-metadata (nye felt i databasen)
-    eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
-    eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
+
 
     # Flagg for om objektet skal tas med i beregning (visningen sjekker 'include')
     include = st.checkbox("Ta med i beregning (include)", value=True)
