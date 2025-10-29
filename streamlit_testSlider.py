@@ -583,8 +583,8 @@ with st.form("manual_add_form"):
     scenario_valg = st.selectbox("Scenario (scenario)", SCENARIOS, index=SCENARIOS.index(scen) if scen in SCENARIOS else 0)
 
     # Valgfritt – geokoordinater og fritekst
-    latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
-    longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
+    #latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
+    #longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
     beskrivelse = st.text_area("Beskrivelse (valgfritt)", value="")
 
     # EML-metadata (nye felt i databasen)
