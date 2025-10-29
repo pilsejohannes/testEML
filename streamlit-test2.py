@@ -33,7 +33,7 @@ st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 # ==========================================================
 # Konfig
 # ==========================================================
-DB_FILENAME = "testSlider_risiko_db.json"
+DB_FILENAME = "risiko_db.json"
 SCENARIOS = ["Brann", "Skred", "Flom", "Annet"]
 
 # Forventede kolonner (case-insensitiv matching)
@@ -49,7 +49,7 @@ EXPECTED_COLS = {
 # ==========================================================
 # Hjelpere
 # ==========================================================
-DB_FILENAME = "testSlider_risiko_db.json"
+DB_FILENAME = "risiko_db.json"
 
 def load_db_from_file(path):
     import json
@@ -183,7 +183,7 @@ with st.sidebar:
     st.download_button(
         "⬇️ Last ned database (JSON)",
         data=json.dumps(db, ensure_ascii=False, indent=2),
-        file_name="testSlider_risiko_db.json",
+        file_name="risiko_db.json",
         mime="application/json",
     )
 
