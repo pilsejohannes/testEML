@@ -9,6 +9,9 @@ st.set_page_config(page_title="EML-prototype", layout="wide")
 import streamlit as st, sys
 from pathlib import Path
 st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
+import traceback
+import streamlit as st, traceback
+st.set_option("client.showErrorDetails", True)
 
 #def force_rerun():
 #    # Streamlit >= 1.36
@@ -71,7 +74,7 @@ def load_db_from_file(path: str) -> Dict[str, Any]:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
     except Exception:
-        return {}
+        st.error(...); st.stop() #return {}
 
 
 def save_db_to_file(path: str, db: dict):
@@ -80,7 +83,11 @@ def save_db_to_file(path: str, db: dict):
             json.dump(db, f, ensure_ascii=False, indent=2)
         return True, None
     except Exception as e:
-        return False, str(e)
+        st.error(f"Feil: {e}")
+        st.exception(e)  # viser traceback i appen
+        st.stop()
+
+st.write("DEBUG: type(db)=", type(db).__name__) #sjekk at db faktisk inneholder noe
 
 
 # --- Enkel maskinell EML-modell (rate) ---
@@ -387,27 +394,46 @@ except Exception as e:
 #import pandas as pd
 #import streamlit as st
 
+
+# Sørg for synlige feildetaljer
+st.set_option("client.showErrorDetails", True)
+
 with tab_scen:
     st.subheader("Velg kumulesone og scenario for beregning og overstyring")
 
-    # Finn tilgjengelige kumulesoner
-    kumuler = sorted({r.get("kumulesone", "") for r in db.values() if isinstance(r, dict)})
-    sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler)
+    # --- Defensive logging ---
+    st.write("DEBUG: type(db)=", type(db).__name__)
+    if not isinstance(db, dict):
+        st.error("DB er ikke et dict. Sjekk load_db_from_file().")
+        st.stop()
+
+    # Finn tilgjengelige kumulesoner (tomme filtreres bort)
+    try:
+        kumuler = sorted({str(r.get("kumulesone", "")).strip()
+                          for r in db.values() if isinstance(r, dict)} - {""})
+    except Exception as e:
+        st.error("Klarte ikke å lese kumuler fra db.")
+        st.exception(e)
+        st.stop()
+
+    sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler, index=0)
     scen = st.selectbox("Scenario", options=SCENARIOS, index=0)
 
-    # Gjør kumule-liste tilgjengelig for skjemaet nedenfor
+    # Til bruk i skjemaet under
     kumule_liste = [""] + kumuler
 
     if not sel_kumule:
         st.info("Velg en kumulesone for å beregne EML.")
     else:
+        # ---------- Beregning/visning per risiko ----------
         try:
-            rows = []
-            # For lagring av endringer
             changed_manual_on: Dict[str, bool] = {}
             changed_manual_rate: Dict[str, float] = {}
 
-            for k, r in db.items():
+            # Kopi av items for å unngå mutasjon-while-iterasjon-problemer
+            db_items = list(db.items())
+
+            for k, r in db_items:
                 if not isinstance(r, dict):
                     continue
                 if str(r.get("kumulesone", "")) != str(sel_kumule):
@@ -417,9 +443,13 @@ with tab_scen:
                 if str(r.get("scenario", SCENARIOS[0])) != scen:
                     continue
 
-                # Nåværende verdier
                 si = float(r.get("sum_forsikring", 0) or 0)
-                rate_machine = calc_eml_rate_machine(r)
+                try:
+                    rate_machine = calc_eml_rate_machine(r)
+                except Exception as e:
+                    rate_machine = 0.0
+                    st.warning(f"Kunne ikke beregne maskin-sats for {k}: {e}")
+
                 manual_on_default = bool(r.get("eml_rate_manual_on", False))
                 manual_rate_default = float(r.get("eml_rate_manual", 0.0)) * 100.0
 
@@ -432,10 +462,10 @@ with tab_scen:
                 c6.write(f"Mask.sats {rate_machine*100:.1f}%")
                 changed_manual_on[k] = c7.checkbox("Overstyr", value=manual_on_default, key=f"ovr_{k}")
                 changed_manual_rate[k] = c8.number_input(
-                    "Manuell %", min_value=0.0, max_value=100.0, step=0.5, value=manual_rate_default, key=f"mrate_{k}"
+                    "Manuell %", min_value=0.0, max_value=100.0, step=0.5,
+                    value=manual_rate_default, key=f"mrate_{k}"
                 )
 
-                # Beregn EML live basert på inputs
                 eff_rate = (changed_manual_rate[k] / 100.0) if changed_manual_on[k] else rate_machine
                 eml_val = int(round(si * eff_rate))
                 st.markdown(f"**EML (effektiv):** {eml_val:,.0f} NOK".replace(",", " "))
@@ -443,16 +473,16 @@ with tab_scen:
 
             if st.button("💾 Lagre manuelle overstyringer for denne kumulesonen"):
                 for k, on_val in changed_manual_on.items():
-                    if k in db:
+                    if k in db and isinstance(db[k], dict):
                         db[k]["eml_rate_manual_on"] = bool(on_val)
                         db[k]["eml_rate_manual"] = float(changed_manual_rate.get(k, 0.0)) / 100.0
                         db[k]["updated"] = now_iso()
                 save_db_to_file(DB_FILENAME, db)
                 st.success("Overstyringer lagret.")
 
-            # Etter visning av alle: totaler
+            # ---------- Totaler ----------
             rows_tot = []
-            for k, r in db.items():
+            for k, r in db_items:
                 if not isinstance(r, dict):
                     continue
                 if str(r.get("kumulesone", "")) != str(sel_kumule):
@@ -462,7 +492,10 @@ with tab_scen:
                 if str(r.get("scenario", SCENARIOS[0])) != scen:
                     continue
                 si = float(r.get("sum_forsikring", 0) or 0)
-                rate = calc_eml_rate_effective(r)
+                try:
+                    rate = calc_eml_rate_effective(r)
+                except Exception as e:
+                    rate = 0.0
                 rows_tot.append({"SI": si, "EML": int(round(si * rate))})
 
             dft = pd.DataFrame(rows_tot)
@@ -472,14 +505,13 @@ with tab_scen:
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
 
-            # Flytt subheader hit for å alltid vise skjemaet under
-            st.subheader("Legg til risiko manuelt")
-
         except Exception as e:
-            # ⛔️ Ikke bruk 'return' i toppnivå – vis feilen og fortsett
-            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
+            st.error("Klarte ikke å beregne/oppdatere scenario.")
+            st.exception(e)   # viser full traceback
+            st.stop()
 
-    # === Skjema for manuell risiko-tillegg (ligger i samme tab) ===
+    # ---------- Skjema: Legg til risiko manuelt ----------
+    st.subheader("Legg til risiko manuelt")
     with st.form("manual_add_form"):
         forsikringsnummer = st.text_input("Forsikringsnummer")
         risikonummer = st.text_input("Risikonummer (valgfritt)")
@@ -492,13 +524,11 @@ with tab_scen:
         eml_beregnet = date.today()
         beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
 
-        # Forvalg: sett valgt kumule fra selectbox over, hvis satt
         default_index = kumule_liste.index(sel_kumule) if sel_kumule in kumule_liste else 0
         kumule_id = st.selectbox("Legg til i kumule", kumule_liste, index=default_index)
 
         submitted = st.form_submit_button("Legg til risiko")
         if submitted:
-            # Sørg for at containeren finnes
             if "risikoer" not in db or not isinstance(db["risikoer"], list):
                 db["risikoer"] = []
 
@@ -517,7 +547,11 @@ with tab_scen:
                 "kilde": "manuell",
             }
 
-            db["risikoer"].append(ny_risiko)
-            save_db_to_file(DB_FILENAME, db)
-            st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
-            st.rerun()  # valgfritt: oppdatér tabellen umiddelbart
+            try:
+                db["risikoer"].append(ny_risiko)
+                save_db_to_file(DB_FILENAME, db)
+                st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
+                # st.rerun()  # slå på igjen når alt er stabilt
+            except Exception as e:
+                st.error("Klarte ikke å lagre ny risiko.")
+                st.exception(e)
