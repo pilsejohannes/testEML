@@ -12,12 +12,7 @@
       "scenario": "Brann",
       "dato": "01.03.2024",
       "navn": "Petter"
-      "brann": {
-        "risiko_for_brann": "Høy|Middels|Lav",
-        "spredning_av_brann": "Stor|Middels|Liten",
-        "tid_for_slukkeinnsats": "Lang|Middels|Kort",
-        "updated": "2025-10-29T09:59:00Z"
-      }
+
 
     }
   ],
