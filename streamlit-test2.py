@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
+from datetime import date
 
 import streamlit as st
 
@@ -547,7 +548,7 @@ with tab_scen:
         latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
         longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
         beskrivelse = st.text_area("Beskrivelse av objekt / risiko")
-        eml_beregnet = date.today()
+        eml_beregnet = date.today().isoformat()
         beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
 
         default_index = kumule_liste.index(sel_kumule) if sel_kumule in kumule_liste else 0
