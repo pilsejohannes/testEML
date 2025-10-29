@@ -538,47 +538,87 @@ with tab_scen:
             st.stop()
 
     # ---------- Skjema: Legg til risiko manuelt ----------
-    st.subheader("Legg til risiko manuelt")
-    with st.form("manual_add_form"):
-        forsikringsnummer = st.text_input("Forsikringsnummer")
-        risikonummer = st.text_input("Risikonummer (valgfritt)")
-        adresse = st.text_input("Adresse / sted")
-        postnummer = st.text_input("Postnummer")
-        kommune = st.text_input("Kommune")
-        latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
-        longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
-        beskrivelse = st.text_area("Beskrivelse av objekt / risiko")
-        eml_beregnet = date.today().isoformat()
-        beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
+   # ---------- Skjema: Legg til risiko manuelt (lagrer på toppnivå i db) ----------
+import uuid
+from datetime import date
 
-        default_index = kumule_liste.index(sel_kumule) if sel_kumule in kumule_liste else 0
-        kumule_id = st.selectbox("Legg til i kumule", kumule_liste, index=default_index)
+st.subheader("Legg til risiko manuelt")
 
-        submitted = st.form_submit_button("Legg til risiko")
-        if submitted:
+with st.form("manual_add_form"):
+    # Felter som matcher visningskoden
+    forsnr = st.text_input("Forsikringsnummer (forsnr)")
+    risikonr = st.text_input("Risikonummer (risikonr)")
+    kundenavn = st.text_input("Kundenavn (kundenavn)", value="")
+    adresse = st.text_input("Adresse (adresse)")
+    postnummer = st.text_input("Postnummer (postnummer)", value="")
+    kommune = st.text_input("Kommune (kommune)", value="")
+    sum_forsikring = st.number_input("Sum forsikring (sum_forsikring) – NOK", min_value=0, step=10000)
+
+    # Bruker samme kumulesone og scenario som valgt over
+    # (forvalg gir rask registrering i riktig sone/scenario)
+    default_index = kumule_liste.index(sel_kumule) if sel_kumule in kumule_liste else 0
+    kumulesone = st.selectbox("Kumulesone (kumulesone)", kumule_liste, index=default_index)
+    scenario_valg = st.selectbox("Scenario (scenario)", SCENARIOS, index=SCENARIOS.index(scen) if scen in SCENARIOS else 0)
+
+    # Valgfritt – geokoordinater og fritekst
+    latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
+    longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
+    beskrivelse = st.text_area("Beskrivelse (valgfritt)", value="")
+
+    # EML-metadata (nye felt i databasen)
+    eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
+    eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
+
+    # Flagg for om objektet skal tas med i beregning (visningen sjekker 'include')
+    include = st.checkbox("Ta med i beregning (include)", value=True)
+
+    submitted = st.form_submit_button("Legg til risiko")
+
+    if submitted:
+        # Lag unik nøkkel for toppnivå-dict (slik visningen fanger den opp)
+        key = f"MAN_{uuid.uuid4().hex[:8]}"
+
+        # Bygg record med FELTNAVN som visningen forventer
+        rec = {
+            "forsnr": forsnr,
+            "risikonr": risikonr,
+            "kundenavn": kundenavn,
+            "adresse": adresse,
+            "postnummer": postnummer,
+            "kommune": kommune,
+            "sum_forsikring": float(sum_forsikring),
+            "kumulesone": kumulesone,           # NB: matcher visningen (ikke 'kumule_id')
+            "scenario": scenario_valg,          # matcher visningen
+            "include": bool(include),           # matcher visningen
+
+            # Valgfritt / ekstra
+            #"latitude": latitude,
+            #"longitude": longitude,
+            "beskrivelse": beskrivelse,
+
+            # EML-metadata (nye felt i databasen)
+            "eml_beregnet_dato": eml_beregnet_dato,
+            "eml_beregnet_av": eml_beregnet_av,
+
+            # Overstyringsfelter - default
+            "eml_rate_manual_on": False,
+            "eml_rate_manual": 0.0,
+
+            # Sporing
+            "kilde": "manuell",
+            "updated": now_iso(),
+        }
+
+        # Sørg for at db er et dict og ikke inneholder colliding keys
+        if not isinstance(db, dict):
+            st.error("DB er korrupt (forventet dict).")
+        else:
+            db[key] = rec  # <- Lagrer på toppnivå slik visningen leser
+            # (valgfritt) hold på en speilliste for eksport/import:
             if "risikoer" not in db or not isinstance(db["risikoer"], list):
                 db["risikoer"] = []
+            db["risikoer"].append({**rec, "_key": key})
 
-            ny_risiko = {
-                "forsikringsnummer": forsikringsnummer,
-                "risikonummer": risikonummer,
-                "adresse": adresse,
-                "postnummer": postnummer,
-                "kommune": kommune,
-                "latitude": latitude,
-                "longitude": longitude,
-                "beskrivelse": beskrivelse,
-                "eml_beregnet": str(eml_beregnet),
-                "beregnet_av": beregnet_av,
-                "kumule_id": kumule_id,
-                "kilde": "manuell",
-            }
-
-            try:
-                db["risikoer"].append(ny_risiko)
-                save_db_to_file(DB_FILENAME, db)
-                st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
-                # st.rerun()  # slå på igjen når alt er stabilt
-            except Exception as e:
-                st.error("Klarte ikke å lagre ny risiko.")
-                st.exception(e)
+            save_db_to_file(DB_FILENAME, db)
+            st.success(f"La til risiko {forsnr}/{risikonr} i '{kumulesone}' (key={key}).")
+            st.rerun()
