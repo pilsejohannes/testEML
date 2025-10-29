@@ -503,5 +503,5 @@ with st.form("manual_add_form"):
         st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
         
 
-        except Exception as e:
-            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
+#        except Exception as e:
+#            st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
