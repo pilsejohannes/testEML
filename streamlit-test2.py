@@ -464,5 +464,41 @@ with tab_scen:
                 total_eml = int(dft["EML"].sum())
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
+                st.subheader("Legg til risiko manuelt")
+
+with st.form("manual_add_form"):
+    forsikringsnummer = st.text_input("Forsikringsnummer")
+    risikonummer = st.text_input("Risikonummer (valgfritt)")
+    adresse = st.text_input("Adresse / sted")
+    postnummer = st.text_input("Postnummer")
+    kommune = st.text_input("Kommune")
+    latitude = st.number_input("Latitude (valgfritt)", value=0.0, step=0.0001)
+    longitude = st.number_input("Longitude (valgfritt)", value=0.0, step=0.0001)
+    beskrivelse = st.text_area("Beskrivelse av objekt / risiko")
+    eml_beregnet = datetime.date.today()
+    beregnet_av = st.text_input("Beregnet av", value=st.session_state.get("bruker", ""))
+    kumule_id = st.selectbox("Legg til i kumule", kumule_liste)  # hentet fra eksisterende liste
+    
+    submitted = st.form_submit_button("Legg til risiko")
+    if submitted:
+        ny_risiko = {
+            "forsikringsnummer": forsikringsnummer,
+            "risikonummer": risikonummer,
+            "adresse": adresse,
+            "postnummer": postnummer,
+            "kommune": kommune,
+            "latitude": latitude,
+            "longitude": longitude,
+            "beskrivelse": beskrivelse,
+            "eml_beregnet": str(eml_beregnet),
+            "beregnet_av": beregnet_av,
+            "kumule_id": kumule_id,
+            "kilde": "manuell",
+        }
+        # lagre til database
+        db["risikoer"].append(ny_risiko)
+        save_db_to_file(DB_FILENAME, db)
+        st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
+
         except Exception as e:
             st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
