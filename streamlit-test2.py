@@ -167,6 +167,32 @@ with st.sidebar:
 # ==========================================================
 # Faner: Database og Scenario
 # ==========================================================
+# ---- Last eller opprett database ----
+DB_FILENAME = "risiko_db.json"
+
+def load_db_from_file(path):
+    import json
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        st.warning(f"Klarte ikke å lese {path}, oppretter ny database ({e})")
+    return {"risikoer": [], "kumuler": []}
+
+def save_db_to_file(path, data):
+    import json
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"Klarte ikke å lagre til {path}: {e}")
+
+# 👉 Last databasen her:
+db = load_db_from_file(DB_FILENAME)
+
+
 tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"])
 
 # ----------------------------------------------------------
