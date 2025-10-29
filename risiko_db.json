@@ -9,8 +9,8 @@
       "kumule_id": "Vestfold Nord",
       "sum_forsikring": 15000000,
       "include": true,
-      "scenario": "Brann"
-      "dato": "01.03.2024"
+      "scenario": "Brann",
+      "dato": "01.03.2024",
       "navn": "Petter"
     }
   ],
