@@ -26,8 +26,8 @@ st.set_option("client.showErrorDetails", True)
 #    # Nød-løsning: trigge endring i state for å utløse rerun
 #    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
-VERSION = "1.0"
-st.title(f"EML-prototype (v{VERSION})")
+VERSION = "0.1"
+st.title(f"EML-prototype Slider (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
 # ==========================================================
