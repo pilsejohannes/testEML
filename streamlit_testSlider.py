@@ -431,37 +431,32 @@ BRANN_SPREDNING_CHOICES = ["Stor", "Middels", "Liten"]
 BRANN_SLUCKE_CHOICES = ["Lang", "Middels", "Kort"]
 
 def _scenario_key(scen: str, kumule: str) -> str:
-    # unik nøkkel for å lagre scenariobeskrivelse og meta
     return f"{scen}::{kumule}".strip()
 
 with tab_scen:
     st.subheader("EML-scenario – Brann")
 
-    # 1) Velg kumulesone og scenario
+    # 1) Finn kumuler og definer kumule_liste (løser NameError)
     kumuler = sorted({str(r.get("kumulesone", "")).strip()
                       for r in db.values() if isinstance(r, dict)} - {""})
-    sel_kumule = st.selectbox("Kumulesone", options=[""] + kumuler)
+    kumule_liste = [""] + kumuler
+    sel_kumule = st.selectbox("Kumulesone", options=kumule_liste, index=0)
+
     scen = st.selectbox("Scenario", options=["Brann"], index=0)
 
     if not sel_kumule:
         st.info("Velg en kumulesone for å vurdere scenarioet.")
         st.stop()
 
-    # 2) Hent eksisterende scenariobeskrivelse (lagres separat fra risikoene)
+    # 2) Init meta-nøkkel (scenariobeskrivelse lagres separat)
     meta_key = _scenario_key(scen, sel_kumule)
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
 
-    existing_desc = ""
-    if meta_key in db["_scenario_meta"]:
-        existing_desc = db["_scenario_meta"][meta_key].get("beskrivelse", "")
+    existing_desc = db["_scenario_meta"].get(meta_key, {}).get("beskrivelse", "")
 
-    st.markdown("**Scenariobeskrivelse (lagres, vises ikke på forsiden)**")
-    scenariobeskrivelse = st.text_area("Beskrivelse", value=existing_desc, placeholder="Kort beskrivelse av forutsetninger, særskilte forhold, tiltak, osv.", height=120, label_visibility="collapsed")
-
-    # 3) Filtrer risikoer: kun inkluderte i valgt kumule + scenario
-    #    NB: 'scenario' på risiko brukes bare som filter/tag – her jobber vi med scenarioet "Brann".
-    filtered = []
+    # 3) Filtrer risikoer: kun 'include=True' i valgt kumulesone
+    risikoliste = []
     for k, r in db.items():
         if not isinstance(r, dict):
             continue
@@ -469,72 +464,74 @@ with tab_scen:
             continue
         if not bool(r.get("include", False)):
             continue
-        # Hvis du ønsker at bare de som allerede har scenario=="Brann" skal vises, ta med linja under:
-        # if str(r.get("scenario", "Brann")) != "Brann":
-        #     continue
-        filtered.append((k, r))
+        risikoliste.append((k, r))
 
-    if not filtered:
-        st.warning("Ingen risikoer med `include=True` i denne kumulesonen (og scenariofilter).")
+    if not risikoliste:
+        st.warning("Ingen risikoer med `include=True` i denne kumulesonen.")
         st.stop()
 
-    # 4) Skjema per risiko for scenario-parametre
-    st.write(f"**{len(filtered)} risiko(er) i {sel_kumule}**")
-    changed = {}
-
-    for k, r in filtered:
-        st.markdown("---")
-        colA, colB, colC, colD, colE = st.columns([1.2, 1.2, 2.2, 2.2, 2.2])
-
-        forsnr = str(r.get("forsnr", ""))
-        risikonr = str(r.get("risikonr", ""))
-        kundenavn = str(r.get("kundenavn", ""))
-        adresse = str(r.get("adresse", ""))
-
-        colA.write(f"**{forsnr}**")
-        colB.write(f"{risikonr}")
-        colC.write(kundenavn or "–")
-        colD.write(adresse or "–")
-        si = float(r.get("sum_forsikring", 0) or 0)
-        colE.write(f"SI: {int(si):,} NOK".replace(",", " "))
-
-        # Hent ev. tidligere lagrede valg for "Brann"
-        brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
-        risiko_default = brann_cfg.get("risiko_for_brann", "Middels")
-        spredning_default = brann_cfg.get("spredning_av_brann", "Middels")
-        slucke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
-
-        c1, c2, c3 = st.columns(3)
-        risiko_val = c1.selectbox(
-            "Risiko for brann", BRANN_RISIKO_CHOICES,
-            index=BRANN_RISIKO_CHOICES.index(risiko_default) if risiko_default in BRANN_RISIKO_CHOICES else 1,
-            key=f"brann_risiko_{k}"
-        )
-        spredning_val = c2.selectbox(
-            "Spredning av brann", BRANN_SPREDNING_CHOICES,
-            index=BRANN_SPREDNING_CHOICES.index(spredning_default) if spredning_default in BRANN_SPREDNING_CHOICES else 1,
-            key=f"brann_spredning_{k}"
-        )
-        slucke_val = c3.selectbox(
-            "Tid før slukkeinnsats", BRANN_SLUCKE_CHOICES,
-            index=BRANN_SLUCKE_CHOICES.index(slucke_default) if slucke_default in BRANN_SLUCKE_CHOICES else 1,
-            key=f"brann_slucke_{k}"
+    # 4) Skjema (FIKSER 'Missing Submit Button')
+    with st.form("brann_scenario_form"):
+        st.markdown("**Scenariobeskrivelse (lagres, vises ikke på forsiden)**")
+        scenariobeskrivelse = st.text_area(
+            "Beskrivelse",
+            value=existing_desc,
+            placeholder="Forutsetninger, særskilte forhold, tiltak, osv.",
+            height=120,
+            label_visibility="collapsed",
+            key=f"desc_{meta_key}"
         )
 
-        # Buffer endringer (skrives først når bruker trykker "Lagre …")
-        changed[k] = {
-            "brann": {
-                "risiko_for_brann": risiko_val,
-                "spredning_av_brann": spredning_val,
-                "tid_for_slukkeinnsats": slucke_val,
-                "updated": now_iso(),
+        changed = {}
+
+        st.write(f"**{len(risikoliste)} risiko(er) i {sel_kumule}**")
+        for k, r in risikoliste:
+            st.markdown("---")
+            colA, colB, colC, colD, colE = st.columns([1.2, 1.2, 2.2, 2.2, 2.2])
+            colA.write(f"**{r.get('forsnr','')}**")
+            colB.write(f"{r.get('risikonr','')}")
+            colC.write(r.get("kundenavn","") or "–")
+            colD.write(r.get("adresse","") or "–")
+            si = float(r.get("sum_forsikring", 0) or 0)
+            colE.write(f"SI: {int(si):,} NOK".replace(",", " "))
+
+            # Defaults fra tidligere valg (hvis finnes)
+            brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
+            risiko_default = brann_cfg.get("risiko_for_brann", "Middels")
+            spredning_default = brann_cfg.get("spredning_av_brann", "Middels")
+            slucke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
+
+            c1, c2, c3 = st.columns(3)
+            risiko_val = c1.selectbox(
+                "Risiko for brann", BRANN_RISIKO_CHOICES,
+                index=BRANN_RISIKO_CHOICES.index(risiko_default) if risiko_default in BRANN_RISIKO_CHOICES else 1,
+                key=f"brann_risiko_{k}"
+            )
+            spredning_val = c2.selectbox(
+                "Spredning av brann", BRANN_SPREDNING_CHOICES,
+                index=BRANN_SPREDNING_CHOICES.index(spredning_default) if spredning_default in BRANN_SPREDNING_CHOICES else 1,
+                key=f"brann_spredning_{k}"
+            )
+            slucke_val = c3.selectbox(
+                "Tid før slukkeinnsats", BRANN_SLUCKE_CHOICES,
+                index=BRANN_SLUCKE_CHOICES.index(slucke_default) if slucke_default in BRANN_SLUCKE_CHOICES else 1,
+                key=f"brann_slucke_{k}"
+            )
+
+            changed[k] = {
+                "brann": {
+                    "risiko_for_brann": risiko_val,
+                    "spredning_av_brann": spredning_val,
+                    "tid_for_slukkeinnsats": slucke_val,
+                    "updated": now_iso(),
+                }
             }
-        }
 
-    # 5) Lagre scenariobeskrivelse + pr-risiko scenariovalg
-    col_save1, col_save2 = st.columns([1, 2])
-    if col_save1.button("💾 Lagre scenario (Brann) for denne kumulesonen"):
-        # Meta (beskrivelse) – ligger i separat nøkkel som ikke forstyrrer forsiden
+        submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+
+    # 5) Persister ved submit
+    if submitted:
+        # Lagre meta (beskrivelse) separat
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
@@ -542,11 +539,9 @@ with tab_scen:
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
-
-        # Lagre per risiko (under nøkkel "brann")
+        # Lagre per-risiko valg
         for k, patch in changed.items():
             if k in db and isinstance(db[k], dict):
-                # slå sammen med eksisterende data
                 existing = db[k].get("brann", {})
                 if not isinstance(existing, dict):
                     existing = {}
@@ -556,7 +551,7 @@ with tab_scen:
 
         save_db_to_file(DB_FILENAME, db)
         st.success("Scenario 'Brann' lagret for valgt kumulesone.")
-        # st.rerun()  # valgfritt
+        st.rerun()
 
 
     # ---------- Skjema: Legg til risiko manuelt ----------
