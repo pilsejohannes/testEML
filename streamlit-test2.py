@@ -465,6 +465,8 @@ with tab_scen:
                 st.metric("Sum SI i kumulesone", f"{total_si:,.0f}".replace(",", " "))
                 st.metric("Sum EML i kumulesone", f"{total_eml:,.0f}".replace(",", " "))
                 st.subheader("Legg til risiko manuelt")
+                except Exception:
+    return {"risikoer": [], "kumuler": []}
 
 with st.form("manual_add_form"):
     forsikringsnummer = st.text_input("Forsikringsnummer")
@@ -499,8 +501,7 @@ with st.form("manual_add_form"):
         db["risikoer"].append(ny_risiko)
         save_db_to_file(DB_FILENAME, db)
         st.success(f"Risiko {forsikringsnummer} lagt til i kumule {kumule_id}")
-        except Exception:
-    return {"risikoer": [], "kumuler": []}
+        
 
         except Exception as e:
             st.error(f"Klarte ikke å beregne/oppdatere scenario: {e}")
