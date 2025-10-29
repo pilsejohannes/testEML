@@ -428,7 +428,7 @@ st.set_option("client.showErrorDetails", True)
 # --- KONFIG for scenario "Brann" ---
 BRANN_RISIKO_CHOICES = ["Høy", "Middels", "Lav"]
 BRANN_SPREDNING_CHOICES = ["Stor", "Middels", "Liten"]
-BRANN_SLUCKE_CHOICES = ["Lang", "Middels", "Kort"]
+BRANN_slukke_CHOICES = ["Lang", "Middels", "Kort"]
 
 def _scenario_key(scen: str, kumule: str) -> str:
     return f"{scen}::{kumule}".strip()
@@ -472,6 +472,9 @@ with tab_scen:
 
     # 4) Skjema (FIKSER 'Missing Submit Button')
     with st.form("brann_scenario_form"):
+        # EML-metadata (nye felt i databasen)
+        eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
+        eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
         st.markdown("**Scenariobeskrivelse (lagres, vises ikke på forsiden)**")
         scenariobeskrivelse = st.text_area(
             "Beskrivelse",
@@ -499,7 +502,7 @@ with tab_scen:
             brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
             risiko_default = brann_cfg.get("risiko_for_brann", "Middels")
             spredning_default = brann_cfg.get("spredning_av_brann", "Middels")
-            slucke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
+            slukke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
 
             c1, c2, c3 = st.columns(3)
             risiko_val = c1.selectbox(
@@ -512,26 +515,26 @@ with tab_scen:
                 index=BRANN_SPREDNING_CHOICES.index(spredning_default) if spredning_default in BRANN_SPREDNING_CHOICES else 1,
                 key=f"brann_spredning_{k}"
             )
-            slucke_val = c3.selectbox(
-                "Tid før slukkeinnsats", BRANN_SLUCKE_CHOICES,
-                index=BRANN_SLUCKE_CHOICES.index(slucke_default) if slucke_default in BRANN_SLUCKE_CHOICES else 1,
-                key=f"brann_slucke_{k}"
+            slukke_val = c3.selectbox(
+                "Tid før slukkeinnsats", BRANN_slukke_CHOICES,
+                index=BRANN_slukke_CHOICES.index(slukke_default) if slukke_default in BRANN_slukke_CHOICES else 1,
+                key=f"brann_slukke_{k}"
             )
 
             changed[k] = {
                 "brann": {
                     "risiko_for_brann": risiko_val,
                     "spredning_av_brann": spredning_val,
-                    "tid_for_slukkeinnsats": slucke_val,
+                    "tid_for_slukkeinnsats": slukke_val,
                     "updated": now_iso(),
                 }
             }
-                # EML-metadata (nye felt i databasen)
-    eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
-    eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
+             
+
 
         submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
-
+               
+    
     # 5) Persister ved submit
     if submitted:
         # Lagre meta (beskrivelse) separat
