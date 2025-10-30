@@ -404,8 +404,7 @@ try:
     if f_tsi:
         kumuler_keep &= set(grp.index[grp["Sum forsikring"] > 800_000_000])
     if f_eml:
-        kumuler_keep &= set(grp.index[grp["EML (effektiv)"] > 800_000_000])if f_tsi:
-        df = df[df["Sum forsikring"] > 800_000_000]
+        kumuler_keep &= set(grp.index[grp["EML (effektiv)"] > 800_000_000])
     if f_tsi or f_eml:
         df = df[df["Kumulesone"].isin(kumuler_keep)]
 
