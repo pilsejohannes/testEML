@@ -11,6 +11,6 @@ openpyxl>=3.1
 # --- JSON & datalagring ---
 orjson>=3.10
 
-# --- Valgfritt men nyttig ---
+# --- Dato og tekstbehandling ---
 python-dateutil>=2.8
 typing-extensions>=4.9
