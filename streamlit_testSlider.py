@@ -318,7 +318,7 @@ if do_import and up_xlsx is not None:
                         # eksisterende overstyrings-/visningsfelt bevares om de fantes
                         "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
                         "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
-                        "include": rec.get("include", False),
+                        "include": bool(rec.get("include", True)),
                         "scenario": rec.get("scenario", SCENARIOS[0]),
                         "updated": now_iso(),
 
@@ -391,12 +391,23 @@ try:
     colfA, colfB = st.columns(2)
     f_tsi = colfA.toggle("Vis kun TSI > 800 MNOK", value=False)
     f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
-    # Anvend toppfiltre tidlig (NB: TSI/EML er i NOK i df)
-   
+        
+    df["Sum forsikring"]   = pd.to_numeric(df["Sum forsikring"], errors="coerce")
+    df["EML (effektiv)"]   = pd.to_numeric(df["EML (effektiv)"], errors="coerce")
+    grp_src = df[df["Inkluder"]]  # KUN inkluderte
+    grp = (
+        grp_src.groupby("Kumulesone", dropna=False)
+           .agg({"Sum forsikring": "sum", "EML (effektiv)": "sum"})
+           .fillna(0)
+    )
+    kumuler_keep = set(grp.index)
     if f_tsi:
+        kumuler_keep &= set(grp.index[grp["Sum forsikring"] > 800_000_000])
+    if f_eml:
+        kumuler_keep &= set(grp.index[grp["EML (effektiv)"] > 800_000_000])if f_tsi:
         df = df[df["Sum forsikring"] > 800_000_000]
-        if f_eml:
-            df = df[df["EML (effektiv)"] > 800_000_000]
+    if f_tsi or f_eml:
+        df = df[df["Kumulesone"].isin(kumuler_keep)]
 
 
     if df.empty:
