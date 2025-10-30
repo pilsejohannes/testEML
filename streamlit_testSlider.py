@@ -26,7 +26,7 @@ st.set_option("client.showErrorDetails", True)
 #    # Nød-løsning: trigge endring i state for å utløse rerun
 #    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
-VERSION = "0.1"
+VERSION = "0.2"
 st.title(f"EML-prototype Slider (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -120,13 +120,48 @@ BETA = [0.40, 0.30, 0.20, 0.10]
 GAMMA = [0.05, 0.10, 0.15, 0.20]
 EXPO = [1.30, 1.15, 1.00, 0.85]
 
-
 def clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 
 
+# --- Brann-scenariofaktorer (brukes i scenariofanen) ---
+BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.35, "Høy": 0.50}
+BRANN_SPREDNING_FAKTOR = {"Liten": 0.80, "Middels": 1.00, "Stor": 1.20}
+BRANN_SLUKE_FAKTOR = {"Kort": 0.90, "Middels": 1.00, "Lang": 1.10}
+
+def calc_eml_rate_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
+    """
+    Hvis vi har lagret scenario-valgene for 'brann', beregn en EML-rate derfra.
+    Returnerer None hvis ingen gyldige brann-verdier finnes.
+    """
+    b = rec.get("brann") or {}
+    r = b.get("risiko_for_brann")
+    s = b.get("spredning_av_brann")
+    t = b.get("tid_for_slukkeinnsats")
+    if r in BRANN_RISIKO_FAKTOR and s in BRANN_SPREDNING_FAKTOR and t in BRANN_SLUKE_FAKTOR:
+        sats = BRANN_RISIKO_FAKTOR[r] * BRANN_SPREDNING_FAKTOR[s] * BRANN_SLUKE_FAKTOR[t]
+        return clamp01(sats)
+    return None
+
+# --- Enkel maskinell EML-modell (fallback) ---
+BASE = 0.6
+ALPHA = [1.00, 1.15, 1.35, 1.60]
+BETA = [0.40, 0.30, 0.20, 0.10]
+GAMMA = [0.05, 0.10, 0.15, 0.20]
+EXPO = [1.30, 1.15, 1.00, 0.85]
+
 def calc_eml_rate_machine(rec: Dict[str, Any]) -> float:
-    # Prototyp – inntil vi kobler faktorer; gi 30 % default hvis mangler
+    """
+    Prioritet:
+    1) Hvis brann-scenariovalg finnes -> bruk dem til EML-rate
+    2) Ellers: gammel (prototyp) fallback-modell
+    """
+    # 1) Brann-scenariovalg
+    rate_from_brann = calc_eml_rate_from_brann_choices(rec)
+    if rate_from_brann is not None:
+        return clamp01(rate_from_brann)
+
+    # 2) Fallback: prototyp
     try:
         b = int(rec.get("brannrisiko", 0))
         lim = int(rec.get("begrensende_faktorer", 0))
@@ -238,6 +273,16 @@ if do_import and up_xlsx is not None:
                 st.error("Mangler påkrevde kolonner: " + ", ".join(missing))
             else:
                 imported = 0
+                 # Lag oppslags-sett for eksisterende kombinasjoner (kumulesone, forsnr, risikonr)
+                existing_triplets = set()
+                for _k, _r in db.items():
+                    if isinstance(_r, dict):
+                        existing_triplets.add((
+                            str(_r.get("kumulesone","")),
+                            str(_r.get("forsnr","")),
+                            str(_r.get("risikonr","")),
+                        ))
+
                 for _, row in df.iterrows():
                     kumule = str(row.get(col("kumulenr"), ""))
                     risiko = str(row.get(col("risikonr"), ""))
@@ -250,7 +295,16 @@ if do_import and up_xlsx is not None:
                     try:
                         si = float(row.get(col("tariffsum"), 0) or 0)
                     except Exception:
-                        si = 0.0
+                        si = 0.0                 
+                          # Detekter «ny i kumule» (ny kombinasjon i databasen)
+                        triplet = (kumule, forsnr, risiko)
+                        is_new_here = triplet not in existing_triplets
+
+                        # Hent gammel first_seen hvis rad fantes fra før (slik at vi ikke overskriver)
+                        old_first_seen = None
+                        if navn in db and isinstance(db[navn], dict):
+                            old_first_seen = db[navn].get("first_seen")
+
 
                     rec = db.get(navn, {})
                     rec.update({
@@ -265,6 +319,9 @@ if do_import and up_xlsx is not None:
                         "include": rec.get("include", False),
                         "scenario": rec.get("scenario", SCENARIOS[0]),
                         "updated": now_iso(),
+                        "first_seen": old_first_seen if old_first_seen else (now_iso() if is_new_here else None), #sjekker om ny rad for flagging
+                        "is_new_in_kumule": bool(is_new_here),
+
                     })
                     db[navn] = rec
                     imported += 1
@@ -320,9 +377,22 @@ try:
             "Kilde": ("🟩 Manuell" if bool(r.get("eml_rate_manual_on", False)) else "⚙️ Maskinell"),
             "Inkluder": bool(r.get("include", False)),
             "Scenario": r.get("scenario", SCENARIOS[0]),
+            "Ny": "🆕" if bool(r.get("is_new_in_kumule", False)) else "",
         })
 
     df = pd.DataFrame(rows)
+    
+    # Toppfiltre: TSI / EML > 800 MNOK
+    colfA, colfB = st.columns(2)
+    f_tsi = colfA.toggle("Vis kun TSI > 800 MNOK", value=False)
+    f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
+    # Anvend toppfiltre tidlig (NB: TSI/EML er i NOK i df)
+   
+    if f_tsi:
+        df = df[df["Sum forsikring"] > 800_000_000]
+        if f_eml:
+            df = df[df["EML (effektiv)"] > 800_000_000]
+
 
     if df.empty:
         st.info("Ingen data i databasen. Last opp Excel over.")
@@ -376,7 +446,8 @@ try:
                     st.write("**Risikoer i kumulesonen:**")
                     for _, row in grp.sort_values(["Risikonr"]).iterrows():
                         k = row["_key"]
-                        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 1.2, 2.2, 3, 1.6, 1.8, 1, 1.6])
+                        c0, c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([0.6, 1.2, 1.2, 2.2, 3, 1.6, 1.8, 1, 1.6])
+                        c0.write(row["Ny"])  # 🆕 hvis ny
                         c1.write(str(row["Forsnr"]))
                         c2.write(str(row["Risikonr"]))
                         c3.write(str(row["Kunde"]))
@@ -519,18 +590,36 @@ with tab_scen:
                 "Tid før slukkeinnsats", BRANN_slukke_CHOICES,
                 index=BRANN_slukke_CHOICES.index(slukke_default) if slukke_default in BRANN_slukke_CHOICES else 1,
                 key=f"brann_slukke_{k}"
-            )
+            )         
+            
+            # Beregn auto-rate fra de valgte brann-parameterne (vises for transparens)
+            auto_rate_preview = BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKE_FAKTOR[slukke_val]
+            auto_rate_preview = clamp01(auto_rate_preview)
+            auto_eml_preview = int(round(si * auto_rate_preview))
+            st.caption(f"Auto EML-rate: {auto_rate_preview:.2%}  ⇒  Auto EML: {auto_eml_preview:,} NOK".replace(",", " "))
+            
+            # Manuell overstyring (sats) – beholdes mellom kjøringer
 
+            with st.expander("Overstyr EML-sats (valgfritt)"):
+                cur_on = bool(r.get("eml_rate_manual_on", False))
+                cur_rate = float(r.get("eml_rate_manual", 0.0) or 0.0)  # desimal i DB
+                on_chk = st.checkbox("Aktiver manuell sats", value=cur_on, key=f"ovr_on_{k}")
+                pct_val = st.number_input("EML-sats (%)", value=round(cur_rate*100, 2), min_value=0.0, max_value=100.0, step=0.1, key=f"ovr_pct_{k}")
+                # Ta vare på valg for lagring etter submit
             changed[k] = {
                 "brann": {
                     "risiko_for_brann": risiko_val,
                     "spredning_av_brann": spredning_val,
                     "tid_for_slukkeinnsats": slukke_val,
                     "updated": now_iso(),
+                },
+                "override": {
+                    "on": on_chk,
+                    "pct": pct_val,               # prosent i UI, konverteres til desimal ved lagring
+                    "auto_rate": auto_rate_preview
                 }
             }
-             
-
+        
 
         submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
                
@@ -553,8 +642,22 @@ with tab_scen:
                     existing = {}
                 existing.update(patch["brann"])
                 db[k]["brann"] = existing
-                db[k]["updated"] = now_iso()
+                
+                # 2) Auto-rate (for referanse/innsyn)
+                db[k]["eml_rate_auto"] = float(patch["override"]["auto_rate"])
 
+                # 3) Manuell overstyring
+                if patch.get("override"):
+                on = bool(patch["override"]["on"])
+                pct = float(patch["override"]["pct"] or 0.0)
+                db[k]["eml_rate_manual_on"] = on
+                db[k]["eml_rate_manual"] = clamp01(pct / 100.0) if on else 0.0
+                
+                # 4) Stempel
+                db[k]["eml_beregnet_dato"] = eml_beregnet_dato
+                db[k]["eml_beregnet_av"] = eml_beregnet_av
+                db[k]["updated"] = now_iso()
+                
         save_db_to_file(DB_FILENAME, db)
         st.success("Scenario 'Brann' lagret for valgt kumulesone.")
         st.rerun()
