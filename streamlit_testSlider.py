@@ -403,7 +403,7 @@ try:
         st.info("Ingen data i databasen. Last opp Excel over.")
     else:
         # Filtrene
-        m = pd.Series([True] * len(df))
+        m = pd.Series(True, index=df.index)
         if filt_kunde:
             m &= df["Kunde"].astype(str).str.contains(filt_kunde, case=False, na=False)
         if filt_adresse:
