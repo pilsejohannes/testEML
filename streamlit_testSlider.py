@@ -648,10 +648,10 @@ with tab_scen:
 
                 # 3) Manuell overstyring
                 if patch.get("override"):
-                on = bool(patch["override"]["on"])
-                pct = float(patch["override"]["pct"] or 0.0)
-                db[k]["eml_rate_manual_on"] = on
-                db[k]["eml_rate_manual"] = clamp01(pct / 100.0) if on else 0.0
+                    on = bool(patch["override"]["on"])
+                    pct = float(patch["override"]["pct"] or 0.0)
+                    db[k]["eml_rate_manual_on"] = on
+                    db[k]["eml_rate_manual"] = clamp01(pct / 100.0) if on else 0.0
                 
                 # 4) Stempel
                 db[k]["eml_beregnet_dato"] = eml_beregnet_dato
