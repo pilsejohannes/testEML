@@ -272,17 +272,17 @@ if do_import and up_xlsx is not None:
             if missing:
                 st.error("Mangler påkrevde kolonner: " + ", ".join(missing))
             else:
-                imported = 0
-                 # Lag oppslags-sett for eksisterende kombinasjoner (kumulesone, forsnr, risikonr)
+                # Bygg opp eksisterende tripletter for å kunne flagge nye risikoer i eksisterende kumule
                 existing_triplets = set()
                 for _k, _r in db.items():
                     if isinstance(_r, dict):
                         existing_triplets.add((
-                            str(_r.get("kumulesone","")),
-                            str(_r.get("forsnr","")),
-                            str(_r.get("risikonr","")),
+                            str(_r.get("kumulesone", "")),
+                            str(_r.get("forsnr", "")),
+                            str(_r.get("risikonr", "")),
                         ))
 
+                imported = 0
                 for _, row in df.iterrows():
                     kumule = str(row.get(col("kumulenr"), ""))
                     risiko = str(row.get(col("risikonr"), ""))
@@ -295,17 +295,17 @@ if do_import and up_xlsx is not None:
                     try:
                         si = float(row.get(col("tariffsum"), 0) or 0)
                     except Exception:
-                        si = 0.0                 
-                          # Detekter «ny i kumule» (ny kombinasjon i databasen)
-                        triplet = (kumule, forsnr, risiko)
-                        is_new_here = triplet not in existing_triplets
+                        si = 0.0
 
-                        # Hent gammel first_seen hvis rad fantes fra før (slik at vi ikke overskriver)
-                        old_first_seen = None
-                        if navn in db and isinstance(db[navn], dict):
-                            old_first_seen = db[navn].get("first_seen")
+                    # --- DETEKTER "NY I KUMULE" + FIRST_SEEN (må skje FØR rec.update)
+                    triplet = (kumule, forsnr, risiko)
+                    is_new_here = triplet not in existing_triplets
 
+                    old_first_seen = None
+                    if navn in db and isinstance(db[navn], dict):
+                        old_first_seen = db[navn].get("first_seen")
 
+                    # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
                     rec = db.get(navn, {})
                     rec.update({
                         "kumulesone": kumule,
@@ -314,23 +314,28 @@ if do_import and up_xlsx is not None:
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
+
+                        # eksisterende overstyrings-/visningsfelt bevares om de fantes
                         "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
                         "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
                         "include": rec.get("include", False),
                         "scenario": rec.get("scenario", SCENARIOS[0]),
                         "updated": now_iso(),
-                        "first_seen": old_first_seen if old_first_seen else (now_iso() if is_new_here else None), #sjekker om ny rad for flagging
-                        "is_new_in_kumule": bool(is_new_here),
 
+                        # --- NYTT: flagg + first_seen
+                        "first_seen": old_first_seen if old_first_seen else (now_iso() if is_new_here else None),
+                        "is_new_in_kumule": bool(is_new_here),
                     })
                     db[navn] = rec
                     imported += 1
+
+                    # Oppdater in-memory settet så vi ikke flagger samme triplet flere ganger i samme import
+                    existing_triplets.add(triplet)
 
                 ok, err = save_db_to_file(DB_FILENAME, db)
                 if ok:
                     st.success(f"Importert {imported} rader til databasen.")
                     st.session_state.last_import_md5 = file_hash
-                    # Ikke rerun automatisk; la brukeren se status og tabell under.
                 else:
                     st.error(f"Kunne ikke lagre DB: {err}")
     except Exception as e:
