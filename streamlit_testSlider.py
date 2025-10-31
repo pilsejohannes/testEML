@@ -397,12 +397,12 @@ try:
     f_tsi = colfA.toggle("Vis kun TSI > 800 MNOK", value=False)
     f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
         
-    df["Sum forsikring"]   = pd.to_numeric(df["Sum forsikring"], errors="coerce")
-    df["EML (effektiv)"]   = pd.to_numeric(df["EML (effektiv)"], errors="coerce")
+    df["sum_forsikring"]   = pd.to_numeric(df["sum_forsikring"], errors="coerce")
+    df["EML_effektiv"]   = pd.to_numeric(df["EML_effektiv"], errors="coerce")
     grp_src = df[df["Inkluder"]]  # KUN inkluderte
     grp = (
         grp_src.groupby("Kumulesone", dropna=False)
-           .agg({"Sum forsikring": "sum", "EML (effektiv)": "sum"})
+           .agg({"sum_forsikring": "sum", "EML_effektiv": "sum"})
            .fillna(0)
     )
     
@@ -454,14 +454,21 @@ try:
     dff,
     use_container_width=True,
     column_config={
-        "sum_forsikring": st.column_config.NumberColumn(
-            "Sum forsikring",
-            help="NOK",
-            format="%,.0f"
-        ),
+        "forsnr": "Forsnr",
+        "risikonr": "Risikonr",
+        "kundenavn": "Kundenavn",
+        "adresse": "Adresse",
+        "postnummer": "Postnr",
+        "kommune": "Kommune",
+        "kumulesone": "Kumulesone",
+        "scenario": "Scenario",
         "include": st.column_config.CheckboxColumn("Inkludert"),
+        "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
+        "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+        "eml_effektiv": st.column_config.NumberColumn("EML_effektiv", format="%,.0f"),
+        "kilde": "Kilde",
+        "updated": "Oppdatert",
         "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
-        "updated": st.column_config.TextColumn("Sist oppdatert", width="medium"),
     },
     hide_index=True,
 )
@@ -469,11 +476,11 @@ try:
     # Sammenstilling av alle relevante risikoer til TSI/EML
     kumuler_keep = set(grp.index)
     if f_tsi:
-        kumuler_keep &= set(grp.index[grp["Sum forsikring"] > 800_000_000])
+        kumuler_keep &= set(grp.index[grp["sum_forsikring"] > 800_000_000])
     if f_eml:
-        kumuler_keep &= set(grp.index[grp["EML (effektiv)"] > 800_000_000])
+        kumuler_keep &= set(grp.index[grp["eml_effektiv"] > 800_000_000])
     if f_tsi or f_eml:
-        df = df[df["Kumulesone"].isin(kumuler_keep)]
+        df = df[df["kumulesone"].isin(kumuler_keep)]
         
     # Nedlasting av csv-fil
     csv = dff.to_csv(index=False).encode("utf-8")
@@ -497,11 +504,11 @@ try:
         else:
             # Gruppér og vis per kumulesone
             for kumule, grp in dfv.groupby("Kumulesone", dropna=False):
-                total_si = int(grp["Sum forsikring"].sum())
-                total_eml_inc = int(df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]["EML (effektiv)"].sum())
+                total_si = int(grp["sum_forsikring"].sum())
+                total_eml_inc = int(df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]["EML_effektiv"].sum())
                 with st.expander(
                     f"Kumulesone {kumule} – {len(grp)} risikoer | "
-                    f"Sum SI: {total_si:,.0f} | Sum EML (inkluderte): {total_eml_inc:,.0f}".replace(",", " "),
+                    f"Sum SI: {total_si:,.0f} | Sum EML_effektiv: {total_eml_inc:,.0f}".replace(",", " "),
                     expanded=False,
                 ):
                     sc_col1, sc_col2, sc_col3 = st.columns([2, 1, 1])
