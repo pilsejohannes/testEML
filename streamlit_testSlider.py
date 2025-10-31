@@ -306,6 +306,11 @@ if do_import and up_xlsx is not None:
                     except Exception:
                         si = 0.0
 
+                    try:
+                        eml_eff = float(row.get(col("EML sum"), 0) or 0)
+                    except Exception:
+                        eml_eff = 0.0
+
                     # --- DETEKTER "NY I KUMULE" + FIRST_SEEN (må skje FØR rec.update)
                     triplet = (kumule, forsnr, risiko)
                     is_new_here = triplet not in existing_triplets
