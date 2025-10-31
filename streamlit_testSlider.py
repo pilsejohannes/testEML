@@ -374,22 +374,22 @@ try:
             continue
         if key.startswith("_"):  # f.eks. _scenario_meta
             continue
-
-    records.append({
-        "key": key,
-        "forsnr": r.get("forsnr", ""),
-        "risikonr": r.get("risikonr", ""),
-        "kundenavn": r.get("kundenavn", ""),
-        "adresse": r.get("adresse", ""),
-        "postnummer": r.get("postnummer", ""),
-        "kommune": r.get("kommune", ""),
-        "kumulesone": r.get("kumulesone", ""),
-        "scenario": r.get("scenario", ""),
-        "include": bool(r.get("include", False)),
-        "sum_forsikring": float(r.get("sum_forsikring", 0) or 0),
-        "kilde": r.get("kilde", ""),
-        "updated": r.get("updated", "")
-    })
+        
+        records.append({
+            "key": key,
+            "forsnr": r.get("forsnr", ""),
+            "risikonr": r.get("risikonr", ""),
+            "kundenavn": r.get("kundenavn", ""),
+            "adresse": r.get("adresse", ""),
+            "postnummer": r.get("postnummer", ""),
+            "kommune": r.get("kommune", ""),
+            "kumulesone": r.get("kumulesone", ""),
+            "scenario": r.get("scenario", ""),
+            "include": bool(r.get("include", False)),
+            "sum_forsikring": float(r.get("sum_forsikring", 0) or 0),
+            "kilde": r.get("kilde", ""),
+            "updated": r.get("updated", "")
+        })
     df = pd.DataFrame.from_records(records)
     
     # Toppfiltre: TSI / EML > 800 MNOK
