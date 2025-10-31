@@ -323,6 +323,9 @@ if do_import and up_xlsx is not None:
                     old_first_seen = None
                     if navn in db and isinstance(db[navn], dict):
                         old_first_seen = db[navn].get("first_seen")
+                    if rate_eff > 1.0:
+                        rate_eff = rate_eff / 100.0
+                    rate_eff = clamp01(rate_eff)
 
                     # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
                     rec = db.get(navn, {})
@@ -409,98 +412,92 @@ try:
         })
 
         df = pd.DataFrame.from_records(records)
-    
-    # Toppfiltre: TSI / EML > 800 MNOK
-    colfA, colfB = st.columns(2)
-    f_tsi = colfA.toggle("Vis kun TSI > 800 MNOK", value=False)
-    f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
         
-    df["sum_forsikring"] = pd.to_numeric(df["sum_forsikring"], errors="coerce")
-    df["eml_effektiv"]   = pd.to_numeric(df["eml_effektiv"],   errors="coerce")
-    
-    grp_src = df[df["include"]]  # kun inkluderte
-    grp = (
-    grp_src.groupby("kumulesone", dropna=False)
-           .agg({"sum_forsikring": "sum", "eml_effektiv": "sum"})
-           .fillna(0)
-    )
-
+        # Toppfiltre: TSI / EML > 800 MNOK
+        colfA, colfB = st.columns(2)
+        f_tsi = colfA.toggle("Vis kun TSI > 800 MNOK", value=False)
+        f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
         
-    # Etablering av filtre for kolonner i databasen
-    with st.expander("Filter & sortering", expanded=True):
-        c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 2, 1])
-        f_kunde = c1.text_input("Filtrer kundenavn", key="flt_kunde")
-        f_adresse = c2.text_input("Filtrer adresse", key="flt_adresse")
-        f_kumule = c3.selectbox("Kumulesone", options=["(alle)"] + sorted(df["kumulesone"].dropna().unique().tolist()), key="flt_kumule")
-        f_scenario = c4.selectbox("Scenario", options=["(alle)"] + sorted(df["scenario"].dropna().unique().tolist()), key="flt_scenario")
-        f_include = c5.selectbox("Inkludert", options=["(alle)", True, False], key="flt_include")
-    # Filtreringslogikk i databasevisning
-    dff = df.copy()
-    if f_kunde:
-        dff = dff[dff["kundenavn"].str.contains(f_kunde, case=False, na=False)]
-    if f_adresse:
-        dff = dff[dff["adresse"].str.contains(f_adresse, case=False, na=False)]
-    if f_kumule != "(alle)":
-        dff = dff[dff["kumulesone"] == f_kumule]
-    if f_scenario != "(alle)":
-        dff = dff[dff["scenario"] == f_scenario]
-    if f_include != "(alle)":
-        dff = dff[dff["include"] == f_include]
+        df["sum_forsikring"] = pd.to_numeric(df["sum_forsikring"], errors="coerce")
+        df["eml_effektiv"]   = pd.to_numeric(df["eml_effektiv"],   errors="coerce")
 
-    sortable_cols = ["kundenavn", "adresse", "kumulesone", "sum_forsikring", "forsnr", "risikonr", "scenario", "include", "kommune", "postnummer", "kilde", "updated"]
-    c6, c7 = st.columns([3, 2])
-    sort_order = c6.multiselect(
-        "Sortér etter (rekkefølge gjelder)",
-        options=sortable_cols,
-        default=["kumulesone", "kundenavn"],
-        key="sort_cols"
-    )
-    
-    # Sorteringsfilter i db-oversikt
-    asc_flags = []
-    with c7:
-        st.caption("Rekkefølge pr. kolonne")
-        for col in sort_order:
-            asc = st.checkbox(f"↑ {col}", value=True, key=f"asc_{col}")
-            asc_flags.append(asc)
-    if sort_order:
-        try:
-            dff = dff.sort_values(by=sort_order, ascending=asc_flags, kind="mergesort")
-        except Exception as e:
-            st.warning(f"Klarte ikke sortere: {e}")
-    
-    # Tabellvisningslogikk
-    st.dataframe(
-    dff,
-    use_container_width=True,
-    column_config={
-        "forsnr": "Forsnr",
-        "risikonr": "Risikonr",
-        "kundenavn": "Kundenavn",
-        "adresse": "Adresse",
-        "postnummer": "Postnr",
-        "kommune": "Kommune",
-        "kumulesone": "Kumulesone",
-        "scenario": "Scenario",
-        "include": st.column_config.CheckboxColumn("Inkludert"),
-        "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
-        "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
-        "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
-        "kilde": "Kilde",
-        "updated": "Oppdatert",
-        "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
-    },
-    hide_index=True,
-)
+        # Kun inkluderte for kumule-summer
+        grp_src = df[df["include"]]
+        grp = (
+            grp_src.groupby("kumulesone", dropna=False)
+                   .agg({"sum_forsikring": "sum", "eml_effektiv": "sum"})
+                   .fillna(0)
+        )
 
-    # Sammenstilling av alle relevante risikoer til TSI/EML
-    kumuler_keep = set(grp.index)
-    if f_tsi:
-        kumuler_keep &= set(grp.index[grp["sum_forsikring"] > 800_000_000])
-    if f_eml:
-        kumuler_keep &= set(grp.index[grp["eml_effektiv"] > 800_000_000])
-    if f_tsi or f_eml:
-        df = df[df["kumulesone"].isin(kumuler_keep)]
+        # Filter & sorteringspanel
+        with st.expander("Filter & sortering", expanded=True):
+            c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 2, 1])
+            f_kunde    = c1.text_input("Filtrer kundenavn", key="flt_kunde")
+            f_adresse  = c2.text_input("Filtrer adresse", key="flt_adresse")
+            f_kumule   = c3.selectbox("Kumulesone", options=["(alle)"] + sorted(df["kumulesone"].dropna().unique().tolist()), key="flt_kumule")
+            f_scenario = c4.selectbox("Scenario", options=["(alle)"] + sorted(df["scenario"].dropna().unique().tolist()), key="flt_scenario")
+            f_include  = c5.selectbox("Inkludert", options=["(alle)", True, False], key="flt_include")
+
+        dff = df.copy()
+        if f_kunde:
+            dff = dff[dff["kundenavn"].str.contains(f_kunde, case=False, na=False)]
+        if f_adresse:
+            dff = dff[dff["adresse"].str.contains(f_adresse, case=False, na=False)]
+        if f_kumule != "(alle)":
+            dff = dff[dff["kumulesone"] == f_kumule]
+        if f_scenario != "(alle)":
+            dff = dff[dff["scenario"] == f_scenario]
+        if f_include != "(alle)":
+            dff = dff[dff["include"] == f_include]
+
+        sortable_cols = ["kundenavn","adresse","kumulesone","sum_forsikring","forsnr","risikonr",
+                         "scenario","include","kommune","postnummer","kilde","updated"]
+        c6, c7 = st.columns([3, 2])
+        sort_order = c6.multiselect("Sortér etter (rekkefølge gjelder)", options=sortable_cols,
+                                    default=["kumulesone","kundenavn"], key="sort_cols")
+        asc_flags = []
+        with c7:
+            st.caption("Rekkefølge pr. kolonne")
+            for col in sort_order:
+                asc_flags.append(st.checkbox(f"↑ {col}", value=True, key=f"asc_{col}"))
+        if sort_order:
+            try:
+                dff = dff.sort_values(by=sort_order, ascending=asc_flags, kind="mergesort")
+            except Exception as e:
+                st.warning(f"Klarte ikke sortere: {e}")
+
+        # Vis tabell
+        st.dataframe(
+            dff,
+            use_container_width=True,
+            column_config={
+                "forsnr": "Forsnr",
+                "risikonr": "Risikonr",
+                "kundenavn": "Kundenavn",
+                "adresse": "Adresse",
+                "postnummer": "Postnr",
+                "kommune": "Kommune",
+                "kumulesone": "Kumulesone",
+                "scenario": "Scenario",
+                "include": st.column_config.CheckboxColumn("Inkludert"),
+                "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
+                "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+                "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
+                "kilde": "Kilde",
+                "updated": "Oppdatert",
+                "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
+            },
+            hide_index=True,
+        )
+
+        # Kumulefiltere (TSI/EML-thresholds)
+        kumuler_keep = set(grp.index)
+        if f_tsi:
+            kumuler_keep &= set(grp.index[grp["sum_forsikring"] > 800_000_000])
+        if f_eml:
+            kumuler_keep &= set(grp.index[grp["eml_effektiv"] > 800_000_000])
+        if f_tsi or f_eml:
+            df = df[df["kumulesone"].isin(kumuler_keep)]
         
     # Nedlasting av csv-fil
     csv = dff.to_csv(index=False).encode("utf-8")
@@ -509,22 +506,24 @@ try:
     if df.empty:
         st.info("Ingen data i databasen. Last opp Excel over.")
     else:
-        # Filtrene (snake_case)
+       # Filtrene (snake_case)
         m = pd.Series(True, index=df.index)
-        if filt_kunde:
-            m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
-        if filt_adresse:
-            m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
-        if filt_kumule:
-            m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
-        dfv = df[m].copy()
+    if filt_kunde:
+        m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
+    if filt_adresse:
+        m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
+    if filt_kumule:
+        m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
+    dfv = df[m].copy()
+
     if dfv.empty:
         st.warning("Filtrene dine skjuler alle rader. Tøm filtrene for å se alt.")
     else:
-    # Gruppér og vis per kumulesone
+        # Gruppér og vis per kumulesone
         for kumule, grp_k in dfv.groupby("kumulesone", dropna=False):
             total_si = int(grp_k["sum_forsikring"].sum())
             total_eml_inc = int(df[(df["kumulesone"] == kumule) & (df["include"])]["eml_effektiv"].sum())
+
             with st.expander(
                 f"Kumulesone {kumule} – {len(grp_k)} risikoer | "
                 f"Sum SI: {total_si:,.0f} | Sum EML: {total_eml_inc:,.0f}".replace(",", " "),
@@ -559,14 +558,14 @@ try:
                 for _, row in grp_k.sort_values(["risikonr"]).iterrows():
                     k = row["key"]
                     c0, c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([0.6, 1.2, 1.2, 2.2, 3, 1.6, 1.8, 1, 1.6])
-
+    
                     # (c0: ev. ny-flagg hvis du har det i df)
                     c1.write(str(row["forsnr"]))
                     c2.write(str(row["risikonr"]))
                     c3.write(str(row["kundenavn"]))
                     c4.write(str(row["adresse"]))
                     c5.write(f"{int(row['sum_forsikring']):,}".replace(",", " "))
-
+    
                     src_is_manual = bool(db.get(k, {}).get("eml_rate_manual_on", False))
                     c6.write(
                         (
@@ -592,6 +591,7 @@ try:
                             db[k2]["updated"] = now_iso()
                     save_db_to_file(DB_FILENAME, db)
                     st.success("Valg lagret for kumulesonen.")
+
 
 
 except Exception as e:
