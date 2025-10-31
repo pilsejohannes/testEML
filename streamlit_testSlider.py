@@ -398,11 +398,11 @@ try:
     f_eml = colfB.toggle("Vis kun EML > 800 MNOK", value=False)
         
     df["sum_forsikring"]   = pd.to_numeric(df["sum_forsikring"], errors="coerce")
-    df["EML_effektiv"]   = pd.to_numeric(df["EML_effektiv"], errors="coerce")
+    df["eml_effektiv"]   = pd.to_numeric(df["eml_effektiv"], errors="coerce")
     grp_src = df[df["Inkluder"]]  # KUN inkluderte
     grp = (
         grp_src.groupby("Kumulesone", dropna=False)
-           .agg({"sum_forsikring": "sum", "EML_effektiv": "sum"})
+           .agg({"sum_forsikring": "sum", "eml_effektiv": "sum"})
            .fillna(0)
     )
     
@@ -505,10 +505,10 @@ try:
             # Gruppér og vis per kumulesone
             for kumule, grp in dfv.groupby("Kumulesone", dropna=False):
                 total_si = int(grp["sum_forsikring"].sum())
-                total_eml_inc = int(df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]["EML_effektiv"].sum())
+                total_eml_inc = int(df[(df["Kumulesone"] == kumule) & (df["Inkluder"])]["eml_effektiv"].sum())
                 with st.expander(
                     f"Kumulesone {kumule} – {len(grp)} risikoer | "
-                    f"Sum SI: {total_si:,.0f} | Sum EML_effektiv: {total_eml_inc:,.0f}".replace(",", " "),
+                    f"Sum SI: {total_si:,.0f} | Sum eml_effektiv: {total_eml_inc:,.0f}".replace(",", " "),
                     expanded=False,
                 ):
                     sc_col1, sc_col2, sc_col3 = st.columns([2, 1, 1])
