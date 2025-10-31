@@ -323,7 +323,9 @@ if do_import and up_xlsx is not None:
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
-
+                        #"eml_rate": float(rate_eff),
+                        "eml_effektiv": eml_eff,
+                        
                         # eksisterende overstyrings-/visningsfelt bevares om de fantes
                         "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
                         "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
@@ -387,6 +389,8 @@ try:
             "scenario": r.get("scenario", ""),
             "include": bool(r.get("include", False)),
             "sum_forsikring": float(r.get("sum_forsikring", 0) or 0),
+            "eml_rate": float(rate_eff),
+            "eml_effektiv": eml_eff,
             "kilde": r.get("kilde", ""),
             "updated": r.get("updated", "")
         })
