@@ -465,7 +465,7 @@ try:
         "include": st.column_config.CheckboxColumn("Inkludert"),
         "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
         "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
-        "eml_effektiv": st.column_config.NumberColumn("EML_effektiv", format="%,.0f"),
+        "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
         "kilde": "Kilde",
         "updated": "Oppdatert",
         "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
