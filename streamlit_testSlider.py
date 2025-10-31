@@ -390,7 +390,7 @@ try:
             "kilde": r.get("kilde", ""),
             "updated": r.get("updated", "")
         })
-    df = pd.DataFrame.from_records(records)
+        df = pd.DataFrame.from_records(records)
     
     # Toppfiltre: TSI / EML > 800 MNOK
     colfA, colfB = st.columns(2)
