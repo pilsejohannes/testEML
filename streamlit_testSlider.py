@@ -522,77 +522,76 @@ try:
         st.warning("Filtrene dine skjuler alle rader. Tøm filtrene for å se alt.")
     else:
     # Gruppér og vis per kumulesone
-    for kumule, grp_k in dfv.groupby("kumulesone", dropna=False):
-        total_si = int(grp_k["sum_forsikring"].sum())
-        total_eml_inc = int(df[(df["kumulesone"] == kumule) & (df["include"])]["eml_effektiv"].sum())
+        for kumule, grp_k in dfv.groupby("kumulesone", dropna=False):
+            total_si = int(grp_k["sum_forsikring"].sum())
+            total_eml_inc = int(df[(df["kumulesone"] == kumule) & (df["include"])]["eml_effektiv"].sum())
+            with st.expander(
+                f"Kumulesone {kumule} – {len(grp_k)} risikoer | "
+                f"Sum SI: {total_si:,.0f} | Sum EML: {total_eml_inc:,.0f}".replace(",", " "),
+                expanded=False,
+            ):
+                sc_col1, sc_col2, sc_col3 = st.columns([2, 1, 1])
+                with sc_col1:
+                    scen_label = st.selectbox(
+                        f"Scenario for kumule {kumule}", options=SCENARIOS, index=0, key=f"scen_{kumule}"
+                    )
+                with sc_col2:
+                    if st.button("Velg ALLE i kumule", key=f"selall_{kumule}"):
+                        for _, row in grp_k.iterrows():
+                            k = row["key"]
+                            db[k]["include"] = True
+                            db[k]["scenario"] = scen_label
+                        save_db_to_file(DB_FILENAME, db)
+                        st.rerun()
+                with sc_col3:
+                    if st.button("Fjern ALLE i kumule", key=f"clrall_{kumule}"):
+                        for _, row in grp_k.iterrows():
+                            k = row["key"]
+                            db[k]["include"] = False
+                        save_db_to_file(DB_FILENAME, db)
+                        st.rerun()
 
-        with st.expander(
-            f"Kumulesone {kumule} – {len(grp_k)} risikoer | "
-            f"Sum SI: {total_si:,.0f} | Sum EML: {total_eml_inc:,.0f}".replace(",", " "),
-            expanded=False,
-        ):
-            sc_col1, sc_col2, sc_col3 = st.columns([2, 1, 1])
-            with sc_col1:
-                scen_label = st.selectbox(
-                    f"Scenario for kumule {kumule}", options=SCENARIOS, index=0, key=f"scen_{kumule}"
-                )
-            with sc_col2:
-                if st.button("Velg ALLE i kumule", key=f"selall_{kumule}"):
-                    for _, row in grp_k.iterrows():
-                        k = row["key"]
-                        db[k]["include"] = True
-                        db[k]["scenario"] = scen_label
+                # Radvis avhuking med mer info
+                changed_include: Dict[str, bool] = {}
+                changed_scenario: Dict[str, str] = {}
+
+                st.write("**Risikoer i kumulesonen:**")
+                for _, row in grp_k.sort_values(["risikonr"]).iterrows():
+                    k = row["key"]
+                    c0, c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([0.6, 1.2, 1.2, 2.2, 3, 1.6, 1.8, 1, 1.6])
+
+                    # (c0: ev. ny-flagg hvis du har det i df)
+                    c1.write(str(row["forsnr"]))
+                    c2.write(str(row["risikonr"]))
+                    c3.write(str(row["kundenavn"]))
+                    c4.write(str(row["adresse"]))
+                    c5.write(f"{int(row['sum_forsikring']):,}".replace(",", " "))
+
+                    src_is_manual = bool(db.get(k, {}).get("eml_rate_manual_on", False))
+                    c6.write(
+                        (
+                            f"EML≈ {int(row['eml_effektiv']):,}\n"
+                            f"{'🟩 Manuell' if src_is_manual else '⚙️ Maskinell'}"
+                        ).replace(",", " ")
+                    )
+
+                    changed_include[k] = c7.checkbox("Inkl.", value=bool(row["include"]), key=f"inc_{k}")
+                    current_scen = row["scenario"] if row["scenario"] in SCENARIOS else SCENARIOS[0]
+                    changed_scenario[k] = c8.selectbox(
+                        "Scen.", options=SCENARIOS, index=SCENARIOS.index(current_scen), key=f"sce_{k}"
+                    )
+
+                if st.button("💾 Lagre utvalg i denne kumulesonen", key=f"save_{kumule}"):
+                    for k2, val in changed_include.items():
+                        if k2 in db:
+                            db[k2]["include"] = bool(val)
+                            if val:
+                                db[k2]["scenario"] = changed_scenario.get(
+                                    k2, db[k2].get("scenario", SCENARIOS[0])
+                                )
+                            db[k2]["updated"] = now_iso()
                     save_db_to_file(DB_FILENAME, db)
-                    st.rerun()
-            with sc_col3:
-                if st.button("Fjern ALLE i kumule", key=f"clrall_{kumule}"):
-                    for _, row in grp_k.iterrows():
-                        k = row["key"]
-                        db[k]["include"] = False
-                    save_db_to_file(DB_FILENAME, db)
-                    st.rerun()
-
-            # Radvis avhuking med mer info
-            changed_include: Dict[str, bool] = {}
-            changed_scenario: Dict[str, str] = {}
-
-            st.write("**Risikoer i kumulesonen:**")
-            for _, row in grp_k.sort_values(["risikonr"]).iterrows():
-                k = row["key"]
-                c0, c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([0.6, 1.2, 1.2, 2.2, 3, 1.6, 1.8, 1, 1.6])
-
-                # (c0: ev. ny-flagg hvis du har det i df)
-                c1.write(str(row["forsnr"]))
-                c2.write(str(row["risikonr"]))
-                c3.write(str(row["kundenavn"]))
-                c4.write(str(row["adresse"]))
-                c5.write(f"{int(row['sum_forsikring']):,}".replace(",", " "))
-
-                src_is_manual = bool(db.get(k, {}).get("eml_rate_manual_on", False))
-                c6.write(
-                    (
-                        f"EML≈ {int(row['eml_effektiv']):,}\n"
-                        f"{'🟩 Manuell' if src_is_manual else '⚙️ Maskinell'}"
-                    ).replace(",", " ")
-                )
-
-                changed_include[k] = c7.checkbox("Inkl.", value=bool(row["include"]), key=f"inc_{k}")
-                current_scen = row["scenario"] if row["scenario"] in SCENARIOS else SCENARIOS[0]
-                changed_scenario[k] = c8.selectbox(
-                    "Scen.", options=SCENARIOS, index=SCENARIOS.index(current_scen), key=f"sce_{k}"
-                )
-
-            if st.button("💾 Lagre utvalg i denne kumulesonen", key=f"save_{kumule}"):
-                for k2, val in changed_include.items():
-                    if k2 in db:
-                        db[k2]["include"] = bool(val)
-                        if val:
-                            db[k2]["scenario"] = changed_scenario.get(
-                                k2, db[k2].get("scenario", SCENARIOS[0])
-                            )
-                        db[k2]["updated"] = now_iso()
-                save_db_to_file(DB_FILENAME, db)
-                st.success("Valg lagret for kumulesonen.")
+                    st.success("Valg lagret for kumulesonen.")
 
 
 except Exception as e:
