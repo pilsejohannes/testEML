@@ -283,6 +283,15 @@ if do_import and up_xlsx is not None:
                         ))
 
                 imported = 0
+
+                # Tekstfiltre
+                colf1, colf2, colf3 = st.columns(3)
+                with colf1:
+                    filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
+                with colf2:
+                    filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
+                with colf3:
+                    filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
                 for _, row in df.iterrows():
                     kumule = str(row.get(col("kumulenr"), ""))
                     risiko = str(row.get(col("risikonr"), ""))
@@ -345,14 +354,7 @@ if do_import and up_xlsx is not None:
     st.markdown("---")
     st.subheader("2) Filtrer og velg per kumulesone")
 
-    # Tekstfiltre
-    colf1, colf2, colf3 = st.columns(3)
-    with colf1:
-        filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
-    with colf2:
-        filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
-    with colf3:
-        filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
+
 # Sikre at filtre finnes (default tomme)
 filt_kunde = st.session_state.get("filt_kunde", "")
 filt_adresse = st.session_state.get("filt_adresse", "")
