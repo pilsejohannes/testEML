@@ -144,11 +144,11 @@ def calc_eml_rate_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
     return None
 
 # --- Enkel maskinell EML-modell (fallback) ---
-BASE = 0.6
-ALPHA = [1.00, 1.15, 1.35, 1.60]
-BETA = [0.40, 0.30, 0.20, 0.10]
-GAMMA = [0.05, 0.10, 0.15, 0.20]
-EXPO = [1.30, 1.15, 1.00, 0.85]
+#BASE = 0.6
+#ALPHA = [1.00, 1.15, 1.35, 1.60]
+#BETA = [0.40, 0.30, 0.20, 0.10]
+#GAMMA = [0.05, 0.10, 0.15, 0.20]
+#EXPO = [1.30, 1.15, 1.00, 0.85]
 
 def calc_eml_rate_machine(rec: Dict[str, Any]) -> float:
     """
@@ -368,26 +368,29 @@ try:
     # Liten statusboks så vi ser at DB faktisk er fylt
     st.caption(f"🔎 Objekter i database: {len(db)}")
 
-    rows = []
+    records = []
     for key, r in db.items():
         if not isinstance(r, dict):
             continue
-        rows.append({
-            "_key": key,
-            "Kumulesone": str(r.get("kumulesone", "")),
-            "Forsnr": str(r.get("forsnr", "")),
-            "Risikonr": str(r.get("risikonr", "")),
-            "Kunde": str(r.get("kundenavn", "")),
-            "Adresse": str(r.get("adresse", "")),
-            "Sum forsikring": float(r.get("sum_forsikring", 0) or 0),
-            "EML (effektiv)": calc_eml_effective(r),
-            "Kilde": ("🟩 Manuell" if bool(r.get("eml_rate_manual_on", False)) else "⚙️ Maskinell"),
-            "Inkluder": bool(r.get("include", False)),
-            "Scenario": r.get("scenario", SCENARIOS[0]),
-            "Ny": "🆕" if bool(r.get("is_new_in_kumule", False)) else "",
-        })
+        if key.startswith("_"):  # f.eks. _scenario_meta
+            continue
 
-    df = pd.DataFrame(rows)
+    records.append({
+        "key": key,
+        "forsnr": r.get("forsnr", ""),
+        "risikonr": r.get("risikonr", ""),
+        "kundenavn": r.get("kundenavn", ""),
+        "adresse": r.get("adresse", ""),
+        "postnummer": r.get("postnummer", ""),
+        "kommune": r.get("kommune", ""),
+        "kumulesone": r.get("kumulesone", ""),
+        "scenario": r.get("scenario", ""),
+        "include": bool(r.get("include", False)),
+        "sum_forsikring": float(r.get("sum_forsikring", 0) or 0),
+        "kilde": r.get("kilde", ""),
+        "updated": r.get("updated", "")
+    })
+    df = pd.DataFrame.from_records(records)
     
     # Toppfiltre: TSI / EML > 800 MNOK
     colfA, colfB = st.columns(2)
@@ -402,6 +405,68 @@ try:
            .agg({"Sum forsikring": "sum", "EML (effektiv)": "sum"})
            .fillna(0)
     )
+    
+    # Etablering av filtre for kolonner i databasen
+    with st.expander("Filter & sortering", expanded=True):
+        c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 2, 1])
+        f_kunde = c1.text_input("Filtrer kundenavn", key="flt_kunde")
+        f_adresse = c2.text_input("Filtrer adresse", key="flt_adresse")
+        f_kumule = c3.selectbox("Kumulesone", options=["(alle)"] + sorted(df["kumulesone"].dropna().unique().tolist()), key="flt_kumule")
+        f_scenario = c4.selectbox("Scenario", options=["(alle)"] + sorted(df["scenario"].dropna().unique().tolist()), key="flt_scenario")
+        f_include = c5.selectbox("Inkludert", options=["(alle)", True, False], key="flt_include")
+    # Filtreringslogikk i databasevisning
+    dff = df.copy()
+    if f_kunde:
+        dff = dff[dff["kundenavn"].str.contains(f_kunde, case=False, na=False)]
+    if f_adresse:
+        dff = dff[dff["adresse"].str.contains(f_adresse, case=False, na=False)]
+    if f_kumule != "(alle)":
+        dff = dff[dff["kumulesone"] == f_kumule]
+    if f_scenario != "(alle)":
+        dff = dff[dff["scenario"] == f_scenario]
+    if f_include != "(alle)":
+        dff = dff[dff["include"] == f_include]
+
+    sortable_cols = ["kundenavn", "adresse", "kumulesone", "sum_forsikring", "forsnr", "risikonr", "scenario", "include", "kommune", "postnummer", "kilde", "updated"]
+    c6, c7 = st.columns([3, 2])
+    sort_order = c6.multiselect(
+        "Sortér etter (rekkefølge gjelder)",
+        options=sortable_cols,
+        default=["kumulesone", "kundenavn"],
+        key="sort_cols"
+    )
+    
+    # Sorteringsfilter i db-oversikt
+    asc_flags = []
+    with c7:
+        st.caption("Rekkefølge pr. kolonne")
+        for col in sort_order:
+            asc = st.checkbox(f"↑ {col}", value=True, key=f"asc_{col}")
+            asc_flags.append(asc)
+    if sort_order:
+        try:
+            dff = dff.sort_values(by=sort_order, ascending=asc_flags, kind="mergesort")
+        except Exception as e:
+            st.warning(f"Klarte ikke sortere: {e}")
+    
+    # Tabellvisningslogikk
+    st.dataframe(
+    dff,
+    use_container_width=True,
+    column_config={
+        "sum_forsikring": st.column_config.NumberColumn(
+            "Sum forsikring",
+            help="NOK",
+            format="%,.0f"
+        ),
+        "include": st.column_config.CheckboxColumn("Inkludert"),
+        "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
+        "updated": st.column_config.TextColumn("Sist oppdatert", width="medium"),
+    },
+    hide_index=True,
+)
+
+    # Sammenstilling av alle relevante risikoer til TSI/EML
     kumuler_keep = set(grp.index)
     if f_tsi:
         kumuler_keep &= set(grp.index[grp["Sum forsikring"] > 800_000_000])
@@ -496,6 +561,10 @@ try:
                                 db[k]["updated"] = now_iso()
                         save_db_to_file(DB_FILENAME, db)
                         st.success("Valg lagret for kumulesonen.")
+
+# Nedlasting av csv-fil
+csv = dff.to_csv(index=False).encode("utf-8")
+st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
 
 except Exception as e:
     st.error(f"Visningsfeil: {e}")
