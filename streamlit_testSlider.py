@@ -249,7 +249,14 @@ if "last_import_md5" not in st.session_state:
 # Vis knapp kun hvis fil er valgt
 can_import = up_xlsx is not None
 do_import = st.button("📥 Importer fra valgt fil", disabled=not can_import)
-
+# Tekstfiltre
+colf1, colf2, colf3 = st.columns(3)
+with colf1:
+    filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
+with colf2:
+    filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
+with colf3:
+    filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
 if do_import and up_xlsx is not None:
     try:
         import pandas as pd, io
@@ -284,14 +291,7 @@ if do_import and up_xlsx is not None:
 
                 imported = 0
 
-                # Tekstfiltre
-                colf1, colf2, colf3 = st.columns(3)
-                with colf1:
-                    filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
-                with colf2:
-                    filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
-                with colf3:
-                    filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
+               
                 for _, row in df.iterrows():
                     kumule = str(row.get(col("kumulenr"), ""))
                     risiko = str(row.get(col("risikonr"), ""))
