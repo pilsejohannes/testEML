@@ -613,7 +613,7 @@ try:
         if filt_kumule:
             m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
     
-                    st.success("Valg lagret for kumulesonen.")
+                   # st.success("Valg lagret for kumulesonen.")
 
 
 
