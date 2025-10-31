@@ -510,18 +510,17 @@ try:
         st.info("Ingen data i databasen. Last opp Excel over.")
     else:
         # Filtrene (snake_case)
-m = pd.Series(True, index=df.index)
-if filt_kunde:
-    m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
-if filt_adresse:
-    m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
-if filt_kumule:
-    m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
-dfv = df[m].copy()
-
-if dfv.empty:
-    st.warning("Filtrene dine skjuler alle rader. Tøm filtrene for å se alt.")
-else:
+        m = pd.Series(True, index=df.index)
+        if filt_kunde:
+            m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
+        if filt_adresse:
+            m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
+        if filt_kumule:
+            m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
+        dfv = df[m].copy()
+    if dfv.empty:
+        st.warning("Filtrene dine skjuler alle rader. Tøm filtrene for å se alt.")
+    else:
     # Gruppér og vis per kumulesone
     for kumule, grp_k in dfv.groupby("kumulesone", dropna=False):
         total_si = int(grp_k["sum_forsikring"].sum())
