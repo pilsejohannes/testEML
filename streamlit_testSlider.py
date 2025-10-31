@@ -474,7 +474,10 @@ try:
         kumuler_keep &= set(grp.index[grp["EML (effektiv)"] > 800_000_000])
     if f_tsi or f_eml:
         df = df[df["Kumulesone"].isin(kumuler_keep)]
-
+        
+    # Nedlasting av csv-fil
+    csv = dff.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
 
     if df.empty:
         st.info("Ingen data i databasen. Last opp Excel over.")
@@ -562,9 +565,7 @@ try:
                         save_db_to_file(DB_FILENAME, db)
                         st.success("Valg lagret for kumulesonen.")
 
-# Nedlasting av csv-fil
-csv = dff.to_csv(index=False).encode("utf-8")
-st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
+
 
 except Exception as e:
     st.error(f"Visningsfeil: {e}")
