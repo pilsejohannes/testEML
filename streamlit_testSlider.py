@@ -530,39 +530,39 @@ try:
     csv = dff.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
 
-        # --- TRINN 3: Én sorterbar/redigerbar tabell ---
-        # Vi lar kun 'include' (avhuking) og 'scenario' være redigerbare.
-        present_cols = [c for c in [
-            "include","scenario","forsnr","risikonr","kundenavn","adresse",
-            "postnummer","kommune","kumulesone","sum_forsikring",
-            "skadegrad","eml_effektiv","updated","kilde","key"
-        ] if c in dff.columns]
-        
-        col_cfg = {
-            "include": st.column_config.CheckboxColumn("Inkludert"),
-            "scenario": st.column_config.SelectboxColumn(
-                "Scenario", options=SCENARIOS, required=True
-            ),
-            "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
-            "skadegrad": st.column_config.NumberColumn("EML-rate", format="%.2f"),
-            "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
-            "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
-        }
+    # --- TRINN 3: Én sorterbar/redigerbar tabell ---
+    # Vi lar kun 'include' (avhuking) og 'scenario' være redigerbare.
+    present_cols = [c for c in [
+        "include","scenario","forsnr","risikonr","kundenavn","adresse",
+        "postnummer","kommune","kumulesone","sum_forsikring",
+        "skadegrad","eml_effektiv","updated","kilde","key"
+    ] if c in dff.columns]
+    
+    col_cfg = {
+        "include": st.column_config.CheckboxColumn("Inkludert"),
+        "scenario": st.column_config.SelectboxColumn(
+            "Scenario", options=SCENARIOS, required=True
+        ),
+        "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
+        "skadegrad": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+        "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
+        "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
+    }
              
     
-        if df.empty:
-            st.info("Ingen data i databasen. Last opp Excel over.")
-        else:
-           # Filtrene (snake_case)
-            m = pd.Series(True, index=df.index)
-        if filt_kunde:
-            m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
-        if filt_adresse:
-            m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
-        if filt_kumule:
-            m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
-    
-                   # st.success("Valg lagret for kumulesonen.")
+    if df.empty:
+        st.info("Ingen data i databasen. Last opp Excel over.")
+    else:
+       # Filtrene (snake_case)
+        m = pd.Series(True, index=df.index)
+    if filt_kunde:
+        m &= df["kundenavn"].astype(str).str.contains(filt_kunde, case=False, na=False)
+    if filt_adresse:
+        m &= df["adresse"].astype(str).str.contains(filt_adresse, case=False, na=False)
+    if filt_kumule:
+        m &= df["kumulesone"].astype(str).str.contains(filt_kumule, case=False, na=False)
+
+               # st.success("Valg lagret for kumulesonen.")
 
 
 
