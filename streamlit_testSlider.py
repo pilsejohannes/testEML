@@ -311,7 +311,7 @@ if do_import and up_xlsx is not None:
                         "kumulesone": kumule,
                         "risikonr": risiko,
                         "forsnr": forsnr,
-                        "risikonrbeskrivelse": 
+                        "risikonrbeskrivelse": risikonrbeskrivelse,
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
