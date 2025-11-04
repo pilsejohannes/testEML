@@ -40,6 +40,7 @@ SCENARIOS = ["Brann", "Skred", "Flom", "Annet"]
 EXPECTED_COLS = {
     "kumulenr": "Kumulenr",
     "risikonr": "Risikonr",
+    "risikonrbeskrivelse": "Risikonr beskrivelse",
     "forsnr": "Forsnr",
     "adresse": "Adresse",
     "kundenavn": "Kundenavn",
@@ -261,7 +262,7 @@ if do_import and up_xlsx is not None:
                     if isinstance(_r, dict):
                         existing_triplets.add((
                             str(_r.get("kumulesone", "")),
-                            str(_r.get("forsnr", "")),
+                            str(_r.get("", "")),
                             str(_r.get("risikonr", "")),
                         ))
 
@@ -272,6 +273,7 @@ if do_import and up_xlsx is not None:
                     kumule = str(row.get(col("kumulenr"), ""))
                     risiko = str(row.get(col("risikonr"), ""))
                     forsnr = str(row.get(col("forsnr"), ""))
+                    risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
                     adresse = str(row.get(col("adresse"), ""))
                     kunde = str(row.get(col("kundenavn"), ""))
 
@@ -309,6 +311,7 @@ if do_import and up_xlsx is not None:
                         "kumulesone": kumule,
                         "risikonr": risiko,
                         "forsnr": forsnr,
+                        "risikonrbeskrivelse": 
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
@@ -373,6 +376,7 @@ try:
             "key": key,
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
+            "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
             "kundenavn": r.get("kundenavn", ""),
             "adresse": r.get("adresse", ""),
             "postnummer": r.get("postnummer", ""),
@@ -392,7 +396,7 @@ try:
     else:
         df = pd.DataFrame(
             columns=[
-                "key","forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
+                "key","forsnr","risikonr","risikonrbeskrivelse","kundenavn","adresse","postnummer","kommune",
                 "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
                 "kilde","updated"
             ]
@@ -456,7 +460,7 @@ try:
     from copy import deepcopy
     
     view_cols = [
-        "forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
+        "forsnr","risikonr","risikonrbeskrivelse","kundenavn","adresse","postnummer","kommune",
         "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
     ]
     dff = dff[view_cols].reset_index(drop=True)
