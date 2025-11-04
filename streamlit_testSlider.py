@@ -616,142 +616,188 @@ with tab_scen:
 
     existing_desc = db["_scenario_meta"].get(meta_key, {}).get("beskrivelse", "")
 
-    # 3) Filtrer risikoer: kun 'include=True' i valgt kumulesone
-    risikoliste = []
+    # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
+    
+    DEFAULT_RISIKO   = "Høy"
+    DEFAULT_SPRED    = "Stor"
+    DEFAULT_SLUKE    = "Lang"
+    
+    rows = []
     for k, r in db.items():
         if not isinstance(r, dict):
             continue
         if str(r.get("kumulesone", "")) != sel_kumule:
             continue
-        if not bool(r.get("include", False)):
+        if not bool(r.get("include", True)):
             continue
-        risikoliste.append((k, r))
-
-    if not risikoliste:
-        st.warning("Ingen risikoer med `include=True` i denne kumulesonen.")
-        st.stop()
-
-    # 4) Skjema (FIKSER 'Missing Submit Button')
+    
+        # Les eksisterende (med default til maks)
+        brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
+        risiko_val   = brann_cfg.get("risiko_for_brann", DEFAULT_RISIKO)
+        spredning_val = brann_cfg.get("spredning_av_brann", DEFAULT_SPRED)
+        slukke_val    = brann_cfg.get("tid_for_slukkeinnsats", DEFAULT_SLUKE)
+    
+        si = float(r.get("sum_forsikring", 0) or 0)
+    
+        # Auto-rate (maskin) fra valgene som står nå
+        auto_rate = BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKE_FAKTOR[slukke_val]
+        auto_rate = clamp01(auto_rate)
+    
+        manual_on  = bool(r.get("skadegrad_manual_on", False))
+        manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
+    
+        eff_rate = (manual_pct/100.0) if manual_on else auto_rate
+        eff_rate = clamp01(eff_rate)
+    
+        rows.append({
+            "key": k,
+            # Visningsfelt
+            "adresse": r.get("adresse", ""),
+            "kundenavn": r.get("kundenavn", ""),
+            "kumulesone": r.get("kumulesone", ""),
+            "forsnr": r.get("forsnr", ""),
+            "risikonr": r.get("risikonr", ""),
+            "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
+            "sum_forsikring": si,
+            # Redigerbare scenariofelt
+            "risiko_for_brann": risiko_val,
+            "spredning_av_brann": spredning_val,
+            "tid_for_slukkeinnsats": slukke_val,
+            # Manuell overstyring
+            "manuell_overstyring": manual_on,
+            "manuell_sats_pct": round(manual_pct, 2),
+            # Forklaring (lagres bare hvis oppgitt; kreves ved avvik fra default)
+            "forklaring": r.get("forklaring_brann", ""),
+            # Lesefelt
+            "auto_sats_pct": round(auto_rate*100.0, 2),
+            "skadegrad_eff_pct": round(eff_rate*100.0, 2),
+            "eml_preview": int(round(si * eff_rate)),
+            "updated": r.get("updated", "")
+        })
+    
+    import pandas as pd
+    dsc = pd.DataFrame(rows)
+    
+    st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
+    
     with st.form("brann_scenario_form"):
-        # EML-metadata (nye felt i databasen)
+        # EML-metadata for hele kumulesonen
         eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
         eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
-        st.markdown("**Scenariobeskrivelse (lagres, vises ikke på forsiden)**")
-        scenariobeskrivelse = st.text_area(
-            "Beskrivelse",
-            value=existing_desc,
-            placeholder="Forutsetninger, særskilte forhold, tiltak, osv.",
-            height=120,
-            label_visibility="collapsed",
-            key=f"desc_{meta_key}"
-        )
-
-        changed = {}
-
-        st.write(f"**{len(risikoliste)} risiko(er) i {sel_kumule}**")
-        for k, r in risikoliste:
-            st.markdown("---")
-            colA, colB, colC, colD, colE = st.columns([1.2, 1.2, 2.2, 2.2, 2.2])
-            colA.write(f"**{r.get('forsnr','')}**")
-            colB.write(f"{r.get('risikonr','')}")
-            colC.write(r.get("kundenavn","") or "–")
-            colD.write(r.get("adresse","") or "–")
-            si = float(r.get("sum_forsikring", 0) or 0)
-            colE.write(f"SI: {int(si):,} NOK".replace(",", " "))
-
-            # Defaults fra tidligere valg (hvis finnes)
-            brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
-            risiko_default = brann_cfg.get("risiko_for_brann", "Middels")
-            spredning_default = brann_cfg.get("spredning_av_brann", "Middels")
-            slukke_default = brann_cfg.get("tid_for_slukkeinnsats", "Middels")
-
-            c1, c2, c3 = st.columns(3)
-            risiko_val = c1.selectbox(
-                "Risiko for brann", BRANN_RISIKO_CHOICES,
-                index=BRANN_RISIKO_CHOICES.index(risiko_default) if risiko_default in BRANN_RISIKO_CHOICES else 1,
-                key=f"brann_risiko_{k}"
-            )
-            spredning_val = c2.selectbox(
-                "Spredning av brann", BRANN_SPREDNING_CHOICES,
-                index=BRANN_SPREDNING_CHOICES.index(spredning_default) if spredning_default in BRANN_SPREDNING_CHOICES else 1,
-                key=f"brann_spredning_{k}"
-            )
-            slukke_val = c3.selectbox(
-                "Tid før slukkeinnsats", BRANN_slukke_CHOICES,
-                index=BRANN_slukke_CHOICES.index(slukke_default) if slukke_default in BRANN_slukke_CHOICES else 1,
-                key=f"brann_slukke_{k}"
-            )         
-            
-            # Beregn auto-rate fra de valgte brann-parameterne (vises for transparens)
-            auto_rate_preview = BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKE_FAKTOR[slukke_val]
-            auto_rate_preview = clamp01(auto_rate_preview)
-            auto_eml_preview = int(round(si * auto_rate_preview))
-            st.caption(f"Auto EML-rate: {auto_rate_preview:.2%}  ⇒  Auto EML: {auto_eml_preview:,} NOK".replace(",", " "))
-            
-            # Manuell overstyring (sats) – beholdes mellom kjøringer
-
-            with st.expander("Overstyr EML-sats (valgfritt)"):
-                cur_on = bool(r.get("skadegrad_manual_on", False))
-                cur_rate = float(r.get("skadegrad_manual", 0.0) or 0.0)  # desimal i DB
-                on_chk = st.checkbox("Aktiver manuell sats", value=cur_on, key=f"ovr_on_{k}")
-                pct_val = st.number_input("EML-sats (%)", value=round(cur_rate*100, 2), min_value=0.0, max_value=100.0, step=0.1, key=f"ovr_pct_{k}")
-                # Ta vare på valg for lagring etter submit
-            changed[k] = {
-                "brann": {
-                    "risiko_for_brann": risiko_val,
-                    "spredning_av_brann": spredning_val,
-                    "tid_for_slukkeinnsats": slukke_val,
-                    "updated": now_iso(),
-                },
-                "override": {
-                    "on": on_chk,
-                    "pct": pct_val,               # prosent i UI, konverteres til desimal ved lagring
-                    "auto_rate": auto_rate_preview
-                }
-            }
-        
-
-        submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
-               
     
-    # 5) Persister ved submit
+        edited_dsc = st.data_editor(
+            dsc,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            column_config={
+                "adresse": st.column_config.TextColumn("Adresse", width="large"),
+                "kundenavn": st.column_config.TextColumn("Kunde", width="medium"),
+                "kumulesone": st.column_config.TextColumn("Kumulesone", width="small"),
+                "forsnr": st.column_config.TextColumn("Forsikringsnr", width="small"),
+                "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
+                "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="large"),
+                "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
+    
+                "risiko_for_brann": st.column_config.SelectboxColumn("Risiko for brann", options=BRANN_RISIKO_CHOICES, required=True),
+                "spredning_av_brann": st.column_config.SelectboxColumn("Spredning av brann", options=BRANN_SPREDNING_CHOICES, required=True),
+                "tid_for_slukkeinnsats": st.column_config.SelectboxColumn("Tid før slukkeinnsats", options=BRANN_slukke_CHOICES, required=True),
+    
+                "manuell_overstyring": st.column_config.CheckboxColumn("Manuell sats?"),
+                "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f"),
+    
+                "forklaring": st.column_config.TextColumn("Forklaring (kreves ved avvik)", width="large"),
+    
+                "auto_sats_pct": st.column_config.NumberColumn("Auto sats (%)", format="%.2f", disabled=True),
+                "skadegrad_eff_pct": st.column_config.NumberColumn("Eff. sats (%)", format="%.2f", disabled=True),
+                "eml_preview": st.column_config.NumberColumn("EML (forhåndsvisning)", format="%,.0f", disabled=True),
+    
+                "updated": st.column_config.TextColumn("Oppdatert", width="small"),
+                "key": st.column_config.TextColumn("Key", width="small", help="Intern nøkkel"),
+            },
+            column_order=[
+                "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse",
+                "sum_forsikring",
+                "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
+                "manuell_overstyring","manuell_sats_pct","forklaring",
+                "auto_sats_pct","skadegrad_eff_pct","eml_preview",
+                "updated","key"
+            ],
+            disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","sum_forsikring","auto_sats_pct","skadegrad_eff_pct","eml_preview","updated","key"],
+            key="brann_editor_v2",
+        )
+    
+        submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+    
+    # 5) Persister ved submit (krav: forklaring hvis avvik fra default)
     if submitted:
-        # Lagre meta (beskrivelse) separat
+        # lagre meta for kumule
+        if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
+            db["_scenario_meta"] = {}
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
-            "beskrivelse": scenariobeskrivelse,
+            "beskrivelse": db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
-        # Lagre per-risiko valg
-        for k, patch in changed.items():
-            if k in db and isinstance(db[k], dict):
-                existing = db[k].get("brann", {})
-                if not isinstance(existing, dict):
-                    existing = {}
-                existing.update(patch["brann"])
-                db[k]["brann"] = existing
-                
-                # 2) Auto-rate (for referanse/innsyn)
-                db[k]["skadegrad_auto"] = float(patch["override"]["auto_rate"])
-
-                # 3) Manuell overstyring
-                if patch.get("override"):
-                    on = bool(patch["override"]["on"])
-                    pct = float(patch["override"]["pct"] or 0.0)
-                    db[k]["skadegrad_manual_on"] = on
-                    db[k]["skadegrad_manual"] = clamp01(pct / 100.0) if on else 0.0
-                
-                # 4) Stempel
-                db[k]["eml_beregnet_dato"] = eml_beregnet_dato
-                db[k]["eml_beregnet_av"] = eml_beregnet_av
-                db[k]["updated"] = now_iso()
-                
+    
+        # Valider forklaring ved avvik
+        avvik_uten_forklaring = []
+        for _, row in edited_dsc.iterrows():
+            avvik_fra_default = (
+                (row["risiko_for_brann"] != DEFAULT_RISIKO) or
+                (row["spredning_av_brann"] != DEFAULT_SPRED) or
+                (row["tid_for_slukkeinnsats"] != DEFAULT_SLUKE)
+            )
+            if avvik_fra_default and not str(row.get("forklaring", "")).strip():
+                avvik_uten_forklaring.append(row["key"])
+    
+        if avvik_uten_forklaring:
+            st.error(f"Forklaring mangler for {len(avvik_uten_forklaring)} rad(er) med avvik fra default.")
+            st.stop()
+    
+        # Persister radene
+        changed = 0
+        for _, row in edited_dsc.iterrows():
+            k = row["key"]
+            if k not in db or not isinstance(db[k], dict):
+                continue
+    
+            # 1) Brann-innstillinger (alltid lagres)
+            db[k]["brann"] = {
+                "risiko_for_brann": row["risiko_for_brann"],
+                "spredning_av_brann": row["spredning_av_brann"],
+                "tid_for_slukkeinnsats": row["tid_for_slukkeinnsats"],
+                "updated": now_iso(),
+            }
+    
+            # 2) Manuell overstyring
+            on  = bool(row["manuell_overstyring"])
+            pct = clamp01(float(row.get("manuell_sats_pct") or 0.0) / 100.0)
+            db[k]["skadegrad_manual_on"] = on
+            db[k]["skadegrad_manual"]    = pct
+    
+            # 3) Forklaring (lagre strippede strenger)
+            db[k]["forklaring_brann"] = str(row.get("forklaring", "")).strip()
+    
+            # 4) Auto-rate som referanse
+            auto_rate = BRANN_RISIKO_FAKTOR[row["risiko_for_brann"]] * BRANN_SPREDNING_FAKTOR[row["spredning_av_brann"]] * BRANN_SLUKE_FAKTOR[row["tid_for_slukkeinnsats"]]
+            db[k]["skadegrad_auto"] = clamp01(auto_rate)
+    
+            # 5) Stempel + EML metadata
+            db[k]["eml_beregnet_dato"] = eml_beregnet_dato
+            db[k]["eml_beregnet_av"]   = eml_beregnet_av
+            db[k]["updated"]           = now_iso()
+    
+            changed += 1
+    
         save_db_to_file(DB_FILENAME, db)
-        st.success("Scenario 'Brann' lagret for valgt kumulesone.")
+        st.success(f"Scenario 'Brann' lagret for {sel_kumule}. Endringer: {changed}.")
         st.rerun()
-
+              
+        
+       
 
     # ---------- Skjema: Legg til risiko manuelt ----------
    # ---------- Skjema: Legg til risiko manuelt (lagrer på toppnivå i db) ----------
