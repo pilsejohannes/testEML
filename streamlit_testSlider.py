@@ -379,7 +379,7 @@ try:
             "kommune": r.get("kommune", ""),
             "kumulesone": r.get("kumulesone", ""),
             "scenario": r.get("scenario", ""),
-            "include": bool(r.get("include", False)),
+            "include": bool(r.get("include", True)),
             "sum_forsikring": si,
             "skadegrad": float(rate_eff),
             "eml_effektiv": eml_eff,
@@ -387,7 +387,16 @@ try:
             "updated": r.get("updated", "")
         })
 
+    if records:
         df = pd.DataFrame.from_records(records)
+    else:
+        df = pd.DataFrame(
+            columns=[
+                "key","forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
+                "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
+                "kilde","updated"
+            ]
+        )#df = pd.DataFrame.from_records(records)
         
     # Toppfiltre: TSI / EML > 800 MNOK
     colfA, colfB = st.columns(2)
@@ -486,38 +495,40 @@ try:
     if left.button("✔️ Ta med ALLE i nåværende visning"):
         for k in edited["key"].tolist():
             if k in db: db[k]["include"] = True
-        save_db_to_file(DB_FILENAME, db); st.rerun()
+        save_db_to_file(DB_FILENAME, db); 
+        st.rerun()
 
     if right.button("🚫 Fjern ALLE i nåværende visning"):
         for k in edited["key"].tolist():
             if k in db: db[k]["include"] = False
-        save_db_to_file(DB_FILENAME, db); st.rerun()
+        save_db_to_file(DB_FILENAME, db); 
+        st.rerun()
     
-        # Finn endringer (include/scenario) og persister
-        changed_rows = []
-        for i, row in edited.iterrows():
-            k = row["key"]
-            if k not in db: continue
-            changed = False
-            # include
-            new_inc = bool(row["include"])
-            if bool(db[k].get("include", False)) != new_inc:
-                db[k]["include"] = new_inc; changed = True
-            # scenario
-            new_scen = row["scenario"] if row["scenario"] in SCENARIOS else db[k].get("scenario", SCENARIOS[0])
-            if db[k].get("scenario", SCENARIOS[0]) != new_scen:
-                db[k]["scenario"] = new_scen; changed = True
-            if changed:
-                db[k]["updated"] = now_iso()
-                changed_rows.append(k)
+    # Finn endringer (include/scenario) og persister
+    changed_rows = []
+    for i, row in edited.iterrows():
+        k = row["key"]
+        if k not in db: continue
+        changed = False
+        # include
+        new_inc = bool(row["include"])
+        if bool(db[k].get("include", False)) != new_inc:
+            db[k]["include"] = new_inc; changed = True
+        # scenario
+        new_scen = row["scenario"] if row["scenario"] in SCENARIOS else db[k].get("scenario", SCENARIOS[0])
+        if db[k].get("scenario", SCENARIOS[0]) != new_scen:
+            db[k]["scenario"] = new_scen; changed = True
+        if changed:
+            db[k]["updated"] = now_iso()
+            changed_rows.append(k)
         
-        if changed_rows:
-            save_db_to_file(DB_FILENAME, db)
-       # st.success(f"Lagret endringer for {len(changed_rows)} rad(er).")
-    
-        # Nedlasting av csv-fil
-        csv = dff.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
+    if changed_rows:
+        save_db_to_file(DB_FILENAME, db)
+   # st.success(f"Lagret endringer for {len(changed_rows)} rad(er).")
+
+    # Nedlasting av csv-fil
+    csv = dff.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Last ned filtrert/sortert CSV", data=csv, file_name="risiko_oversikt.csv", mime="text/csv")
 
         # --- TRINN 3: Én sorterbar/redigerbar tabell ---
         # Vi lar kun 'include' (avhuking) og 'scenario' være redigerbare.
@@ -537,45 +548,7 @@ try:
             "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
         }
-        
-        edited_df = st.data_editor(
-            dff[present_cols],
-            use_container_width=True,
-            column_order=present_cols,
-            column_config=col_cfg,
-            disabled=[c for c in present_cols if c not in ("include","scenario")],  # kun disse to er redigerbare
-            num_rows="fixed",
-            key="risiko_editor",
-        )
-        
-        # --- TRINN 4: Lagre endringer tilbake til DB ---
-        if st.button("💾 Lagre endringer i tabellen", type="primary", use_container_width=True):
-            changes = 0
-            for _, row in edited_df.iterrows():
-                k = str(row.get("key", "")).strip()
-                if not k or k not in db or not isinstance(db[k], dict):
-                    continue
-        
-                # hent nye verdier fra tabellen
-                new_include = bool(row.get("include", False))
-                new_scen = row.get("scenario", db[k].get("scenario", SCENARIOS[0]))
-        
-                # sjekk diff før vi skriver
-                if db[k].get("include") != new_include or db[k].get("scenario") != new_scen:
-                    db[k]["include"] = new_include
-                    db[k]["scenario"] = new_scen
-                    db[k]["updated"] = now_iso()
-                    changes += 1
-        
-            if changes > 0:
-                save_db_to_file(DB_FILENAME, db)
-                st.success(f"Lagret {changes} endring(er).")
-                st.rerun()
-            else:
-                st.info("Ingen endringer å lagre.")
-
-    
-       
+             
     
         if df.empty:
             st.info("Ingen data i databasen. Last opp Excel over.")
