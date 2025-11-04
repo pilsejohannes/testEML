@@ -26,7 +26,7 @@ st.set_option("client.showErrorDetails", True)
 #    # Nød-løsning: trigge endring i state for å utløse rerun
 #    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
-VERSION = "0.2"
+VERSION = "0.3"
 st.title(f"EML-prototype Slider (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -113,23 +113,16 @@ def save_db_to_file(path: str, db: dict):
 st.write("DEBUG: type(db)=", type(db).__name__) #sjekk at db faktisk inneholder noe
 
 
-# --- Enkel maskinell EML-modell (rate) ---
-BASE = 0.6
-ALPHA = [1.00, 1.15, 1.35, 1.60]
-BETA = [0.40, 0.30, 0.20, 0.10]
-GAMMA = [0.05, 0.10, 0.15, 0.20]
-EXPO = [1.30, 1.15, 1.00, 0.85]
-
 def clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 
 
 # --- Brann-scenariofaktorer (brukes i scenariofanen) ---
-BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.35, "Høy": 0.50}
-BRANN_SPREDNING_FAKTOR = {"Liten": 0.80, "Middels": 1.00, "Stor": 1.20}
-BRANN_SLUKE_FAKTOR = {"Kort": 0.90, "Middels": 1.00, "Lang": 1.10}
+BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.60, "Høy": 1.0}
+BRANN_SPREDNING_FAKTOR = {"Liten": 0.40, "Middels": 0.80, "Stor": 1.00}
+BRANN_SLUKE_FAKTOR = {"Kort": 0.40, "Middels": 0.80, "Lang": 1.00}
 
-def calc_eml_rate_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
+def calc_skadegrad_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
     """
     Hvis vi har lagret scenario-valgene for 'brann', beregn en EML-rate derfra.
     Returnerer None hvis ingen gyldige brann-verdier finnes.
@@ -143,48 +136,31 @@ def calc_eml_rate_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
         return clamp01(sats)
     return None
 
-# --- Enkel maskinell EML-modell (fallback) ---
-#BASE = 0.6
-#ALPHA = [1.00, 1.15, 1.35, 1.60]
-#BETA = [0.40, 0.30, 0.20, 0.10]
-#GAMMA = [0.05, 0.10, 0.15, 0.20]
-#EXPO = [1.30, 1.15, 1.00, 0.85]
 
-def calc_eml_rate_machine(rec: Dict[str, Any]) -> float:
+def calc_skadegrad_machine(rec: Dict[str, Any]) -> float:
     """
     Prioritet:
-    1) Hvis brann-scenariovalg finnes -> bruk dem til EML-rate
-    2) Ellers: gammel (prototyp) fallback-modell
+    1) Hvis brann-scenariovalg finnes -> bruk dem
+    2) Ellers: 100 % skadegrad (default)
     """
     # 1) Brann-scenariovalg
-    rate_from_brann = calc_eml_rate_from_brann_choices(rec)
+    rate_from_brann = calc_skadegrad_from_brann_choices(rec)
     if rate_from_brann is not None:
         return clamp01(rate_from_brann)
+    # default 100 % hvis ikke sats settes
+    return 1.0
 
-    # 2) Fallback: prototyp
-    try:
-        b = int(rec.get("brannrisiko", 0))
-        lim = int(rec.get("begrensende_faktorer", 0))
-        prot = int(rec.get("deteksjon_beskyttelse", 0))
-        expo = int(rec.get("eksponering_nabo", 0))
-        rate = BASE * ALPHA[b] * EXPO[expo]
-        rate *= (1 - BETA[prot])
-        rate *= (1 - GAMMA[lim])
-        return clamp01(rate)
-    except Exception:
-        return 0.30
-
-
-def calc_eml_rate_effective(rec: Dict[str, Any]) -> float:
-    if rec.get("eml_rate_manual_on"):
-        return clamp01(float(rec.get("eml_rate_manual", 0.0)))
-    return calc_eml_rate_machine(rec)
+# manuell overstyring trumfer maskinell
+def calc_skadegrad_effective(rec: Dict[str, Any]) -> float:
+    if rec.get("skadegrad_manual_on"):
+        return clamp01(float(rec.get("skadegrad_manual", 0.0)))
+    return calc_skadegrad_machine(rec)
 
 
 def calc_eml_effective(rec: Dict[str, Any]) -> int:
     try:
         si = float(rec.get("sum_forsikring", 0) or 0)
-        return int(round(si * calc_eml_rate_effective(rec)))
+        return int(round(si * calc_skadegrad_effective(rec)))
     except Exception:
         return 0
 
@@ -336,12 +312,12 @@ if do_import and up_xlsx is not None:
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
-                        #"eml_rate": float(rate_eff),
+                        #"skadegrad": float(rate_eff),
                         "eml_effektiv": eml_eff,
                         
                         # eksisterende overstyrings-/visningsfelt bevares om de fantes
-                        "eml_rate_manual_on": rec.get("eml_rate_manual_on", False),
-                        "eml_rate_manual": rec.get("eml_rate_manual", 0.0),
+                        "skadegrad_manual_on": rec.get("skadegrad_manual_on", False),
+                        "skadegrad_manual": rec.get("skadegrad_manual", 0.0),
                         "include": bool(rec.get("include", True)),
                         "scenario": rec.get("scenario", SCENARIOS[0]),
                         "updated": now_iso(),
@@ -390,7 +366,7 @@ try:
         if key.startswith("_"):  # f.eks. _scenario_meta
             continue
         si = float(r.get("sum_forsikring", 0) or 0)
-        rate_eff = calc_eml_rate_effective(r)
+        rate_eff = calc_skadegrad_effective(r)
         eml_eff  = int(round(si * rate_eff))
         
         records.append({
@@ -405,7 +381,7 @@ try:
             "scenario": r.get("scenario", ""),
             "include": bool(r.get("include", False)),
             "sum_forsikring": si,
-            "eml_rate": float(rate_eff),
+            "skadegrad": float(rate_eff),
             "eml_effektiv": eml_eff,
             "kilde": r.get("kilde", ""),
             "updated": r.get("updated", "")
@@ -472,7 +448,7 @@ try:
     
     view_cols = [
         "forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
-        "kumulesone","scenario","include","sum_forsikring","eml_rate","eml_effektiv","kilde","updated","key"
+        "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
     ]
     dff = dff[view_cols].reset_index(drop=True)
     
@@ -492,7 +468,7 @@ try:
             "scenario": st.column_config.SelectboxColumn("Scenario", options=SCENARIOS),
             "include": st.column_config.CheckboxColumn("Inkludert"),
             "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
-            "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+            "skadegrad": st.column_config.NumberColumn("EML-rate", format="%.2f"),
             "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
             "kilde": "Kilde",
             "updated": "Oppdatert",
@@ -501,7 +477,7 @@ try:
         disabled=[
             # alt låses bortsett fra include/scenario
             "forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
-            "kumulesone","sum_forsikring","eml_rate","eml_effektiv","kilde","updated","key"
+            "kumulesone","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
         ],
         key="eml_editor",
     )
@@ -548,7 +524,7 @@ try:
         present_cols = [c for c in [
             "include","scenario","forsnr","risikonr","kundenavn","adresse",
             "postnummer","kommune","kumulesone","sum_forsikring",
-            "eml_rate","eml_effektiv","updated","kilde","key"
+            "skadegrad","eml_effektiv","updated","kilde","key"
         ] if c in dff.columns]
         
         col_cfg = {
@@ -557,7 +533,7 @@ try:
                 "Scenario", options=SCENARIOS, required=True
             ),
             "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
-            "eml_rate": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+            "skadegrad": st.column_config.NumberColumn("EML-rate", format="%.2f"),
             "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
         }
@@ -738,8 +714,8 @@ with tab_scen:
             # Manuell overstyring (sats) – beholdes mellom kjøringer
 
             with st.expander("Overstyr EML-sats (valgfritt)"):
-                cur_on = bool(r.get("eml_rate_manual_on", False))
-                cur_rate = float(r.get("eml_rate_manual", 0.0) or 0.0)  # desimal i DB
+                cur_on = bool(r.get("skadegrad_manual_on", False))
+                cur_rate = float(r.get("skadegrad_manual", 0.0) or 0.0)  # desimal i DB
                 on_chk = st.checkbox("Aktiver manuell sats", value=cur_on, key=f"ovr_on_{k}")
                 pct_val = st.number_input("EML-sats (%)", value=round(cur_rate*100, 2), min_value=0.0, max_value=100.0, step=0.1, key=f"ovr_pct_{k}")
                 # Ta vare på valg for lagring etter submit
@@ -781,14 +757,14 @@ with tab_scen:
                 db[k]["brann"] = existing
                 
                 # 2) Auto-rate (for referanse/innsyn)
-                db[k]["eml_rate_auto"] = float(patch["override"]["auto_rate"])
+                db[k]["skadegrad_auto"] = float(patch["override"]["auto_rate"])
 
                 # 3) Manuell overstyring
                 if patch.get("override"):
                     on = bool(patch["override"]["on"])
                     pct = float(patch["override"]["pct"] or 0.0)
-                    db[k]["eml_rate_manual_on"] = on
-                    db[k]["eml_rate_manual"] = clamp01(pct / 100.0) if on else 0.0
+                    db[k]["skadegrad_manual_on"] = on
+                    db[k]["skadegrad_manual"] = clamp01(pct / 100.0) if on else 0.0
                 
                 # 4) Stempel
                 db[k]["eml_beregnet_dato"] = eml_beregnet_dato
@@ -862,8 +838,8 @@ with st.form("manual_add_form"):
             "eml_beregnet_av": eml_beregnet_av,
 
             # Overstyringsfelter - default
-            "eml_rate_manual_on": False,
-            "eml_rate_manual": 0.0,
+            "skadegrad_manual_on": False,
+            "skadegrad_manual": 0.0,
 
             # Sporing
             "kilde": "manuell",
