@@ -654,11 +654,13 @@ with tab_scen:
         manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
     
         eff_rate = clamp01(manual_pct/100.0) if manual_on else auto_rate
-           
+
+        addr = r.get("adresse", "") or ""
+        komm = r.get("kommune", "") or ""
         rows.append({
             "key": k,
             # Visningsfelt
-            "adresse": r.get("adresse", ""),
+            "adresse": addr,
             "kundenavn": r.get("kundenavn", ""),
             "kumulesone": r.get("kumulesone", ""),
             "forsnr": r.get("forsnr", ""),
@@ -679,7 +681,7 @@ with tab_scen:
             "skadegrad_eff_pct": round(eff_rate*100.0, 2),
             "eml_preview": int(round(si * eff_rate)),
             # Kartvisning
-            "kart": maps_url(adresse, kommune),
+            "kart": maps_url(adr, komm),
             "updated": r.get("updated", "")
         })
        
@@ -691,6 +693,11 @@ with tab_scen:
     with st.form("brann_scenario_form"):
         # ØVERST: meta for HELE scenarioet
         meta_col, img_col = st.columns([2, 1])
+        top_c1, top_c2 = st.columns(2)
+        with top_c1:
+            eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
+        with top_c2:
+            eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
 
         with meta_col:
             st.markdown("### Scenariobeskrivelse (gjelder alle risikoer i kumulen)")
@@ -791,7 +798,7 @@ with tab_scen:
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
-            "beskrivelse": db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
+            "beskrivelse": scenariobeskrivelse, # db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
