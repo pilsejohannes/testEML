@@ -121,7 +121,7 @@ def clamp01(x: float) -> float:
 # --- Brann-scenariofaktorer (brukes i scenariofanen) ---
 BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.60, "Høy": 1.0}
 BRANN_SPREDNING_FAKTOR = {"Liten": 0.40, "Middels": 0.80, "Stor": 1.00}
-BRANN_SLUKE_FAKTOR = {"Kort": 0.40, "Middels": 0.80, "Lang": 1.00}
+BRANN_SLUKKE_FAKTOR = {"Kort": 0.40, "Middels": 0.80, "Lang": 1.00}
 
 def calc_skadegrad_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
     """
@@ -132,8 +132,8 @@ def calc_skadegrad_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
     r = b.get("risiko_for_brann")
     s = b.get("spredning_av_brann")
     t = b.get("tid_for_slukkeinnsats")
-    if r in BRANN_RISIKO_FAKTOR and s in BRANN_SPREDNING_FAKTOR and t in BRANN_SLUKE_FAKTOR:
-        sats = BRANN_RISIKO_FAKTOR[r] * BRANN_SPREDNING_FAKTOR[s] * BRANN_SLUKE_FAKTOR[t]
+    if r in BRANN_RISIKO_FAKTOR and s in BRANN_SPREDNING_FAKTOR and t in BRANN_SLUKKE_FAKTOR:
+        sats = BRANN_RISIKO_FAKTOR[r] * BRANN_SPREDNING_FAKTOR[s] * BRANN_SLUKKE_FAKTOR[t]
         return clamp01(sats)
     return None
 
@@ -582,6 +582,9 @@ except Exception as e:
 #import pandas as pd
 #import streamlit as st
 
+import os
+from urllib.parse import quote_plus
+import pandas as pd
 
 # Sørg for synlige feildetaljer
 st.set_option("client.showErrorDetails", True)
@@ -590,6 +593,10 @@ st.set_option("client.showErrorDetails", True)
 BRANN_RISIKO_CHOICES = ["Høy", "Middels", "Lav"]
 BRANN_SPREDNING_CHOICES = ["Stor", "Middels", "Liten"]
 BRANN_slukke_CHOICES = ["Lang", "Middels", "Kort"]
+
+def maps_url(adresse: str, kommune: str = "") -> str:
+    q = adresse if not kommune else f"{adresse}, {kommune}"
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(q)}"
 
 def _scenario_key(scen: str, kumule: str) -> str:
     return f"{scen}::{kumule}".strip()
@@ -602,7 +609,6 @@ with tab_scen:
                       for r in db.values() if isinstance(r, dict)} - {""})
     kumule_liste = [""] + kumuler
     sel_kumule = st.selectbox("Kumulesone", options=kumule_liste, index=0)
-
     scen = st.selectbox("Scenario", options=["Brann"], index=0)
 
     if not sel_kumule:
@@ -615,12 +621,14 @@ with tab_scen:
         db["_scenario_meta"] = {}
 
     existing_desc = db["_scenario_meta"].get(meta_key, {}).get("beskrivelse", "")
+    existing_sp_links = meta.get("sharepoint_links", []) or []
+    existing_images = meta.get("images", []) or []
 
     # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
     
     DEFAULT_RISIKO   = "Høy"
     DEFAULT_SPRED    = "Stor"
-    DEFAULT_SLUKE    = "Lang"
+    DEFAULT_SLUKKE    = "Lang"
     
     rows = []
     for k, r in db.items():
@@ -635,20 +643,18 @@ with tab_scen:
         brann_cfg = r.get("brann", {}) if isinstance(r.get("brann"), dict) else {}
         risiko_val   = brann_cfg.get("risiko_for_brann", DEFAULT_RISIKO)
         spredning_val = brann_cfg.get("spredning_av_brann", DEFAULT_SPRED)
-        slukke_val    = brann_cfg.get("tid_for_slukkeinnsats", DEFAULT_SLUKE)
+        slukke_val    = brann_cfg.get("tid_for_slukkeinnsats", DEFAULT_SLUKKE)
     
         si = float(r.get("sum_forsikring", 0) or 0)
     
         # Auto-rate (maskin) fra valgene som står nå
-        auto_rate = BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKE_FAKTOR[slukke_val]
-        auto_rate = clamp01(auto_rate)
-    
+        auto_rate = clamp01(BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKKE_FAKTOR[slukke_val])
+            
         manual_on  = bool(r.get("skadegrad_manual_on", False))
         manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
     
-        eff_rate = (manual_pct/100.0) if manual_on else auto_rate
-        eff_rate = clamp01(eff_rate)
-    
+        eff_rate = clamp01(manual_pct/100.0) if manual_on else auto_rate
+           
         rows.append({
             "key": k,
             # Visningsfelt
@@ -672,48 +678,95 @@ with tab_scen:
             "auto_sats_pct": round(auto_rate*100.0, 2),
             "skadegrad_eff_pct": round(eff_rate*100.0, 2),
             "eml_preview": int(round(si * eff_rate)),
+            # Kartvisning
+            "kart": maps_url(addr, komm),
             "updated": r.get("updated", "")
         })
-    
-    import pandas as pd
+       
     dsc = pd.DataFrame(rows)
     
     st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
-    
+
+    # Skjemabygging
     with st.form("brann_scenario_form"):
-        # EML-metadata for hele kumulesonen
-        eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
-        eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
-    
+        # ØVERST: meta for HELE scenarioet
+        meta_col, img_col = st.columns([2, 1])
+
+        with meta_col:
+            st.markdown("### Scenariobeskrivelse (gjelder alle risikoer i kumulen)")
+            scenariobeskrivelse = st.text_area(
+                "Fritekstbeskrivelse", value=existing_desc, placeholder="Forutsetninger, tiltak, spesielle forhold, osv.",
+                height=160
+            )
+
+            st.markdown("**SharePoint-lenker (én per linje):**")
+            sp_default = "\n".join(existing_sp_links) if existing_sp_links else ""
+            sp_links_text = st.text_area(
+                "Lenker", value=sp_default,
+                placeholder="https://contoso.sharepoint.com/sites/.../Dok1.pdf\nhttps://contoso.sharepoint.com/sites/.../Mappe/",
+                height=90
+            )
+
+        with img_col:
+            st.markdown("### Bilder")
+            uploads = st.file_uploader(
+                "Last opp bilder (valgfritt)", type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True
+            )
+            # Forhåndsvis eksisterende
+            if existing_images:
+                st.caption("Lagrede bilder:")
+                for p in existing_images[:4]:  # vis inntil 4
+                    try:
+                        st.image(p, use_column_width=True, caption=os.path.basename(p))
+                    except Exception:
+                        st.write(f"• {p}")
+
+            if uploads:
+                st.caption("Nyopplastede (forhåndsvisning):")
+                for f in uploads:
+                    st.image(f, use_column_width=True, caption=f.name)
+
+        st.markdown("---")
+        st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
+
         edited_dsc = st.data_editor(
             dsc,
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
             column_config={
+                # visning
                 "adresse": st.column_config.TextColumn("Adresse", width="large"),
                 "kundenavn": st.column_config.TextColumn("Kunde", width="medium"),
-                "kumulesone": st.column_config.TextColumn("Kumulesone", width="small"),
+                "kumulesone": st.column_config.TextColumn("Kumule", width="small"),
                 "forsnr": st.column_config.TextColumn("Forsikringsnr", width="small"),
                 "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
                 "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="large"),
                 "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
-    
+
+                # scenario (redigerbare)
                 "risiko_for_brann": st.column_config.SelectboxColumn("Risiko for brann", options=BRANN_RISIKO_CHOICES, required=True),
                 "spredning_av_brann": st.column_config.SelectboxColumn("Spredning av brann", options=BRANN_SPREDNING_CHOICES, required=True),
                 "tid_for_slukkeinnsats": st.column_config.SelectboxColumn("Tid før slukkeinnsats", options=BRANN_slukke_CHOICES, required=True),
-    
+
+                # manuell (redigerbare)
                 "manuell_overstyring": st.column_config.CheckboxColumn("Manuell sats?"),
                 "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f"),
-    
-                "forklaring": st.column_config.TextColumn("Forklaring (kreves ved avvik)", width="large"),
-    
-                "auto_sats_pct": st.column_config.NumberColumn("Auto sats (%)", format="%.2f", disabled=True),
-                "skadegrad_eff_pct": st.column_config.NumberColumn("Eff. sats (%)", format="%.2f", disabled=True),
-                "eml_preview": st.column_config.NumberColumn("EML (forhåndsvisning)", format="%,.0f", disabled=True),
-    
+
+                # forklaring (redigerbar)
+                "forklaring": st.column_config.TextColumn("Forklaring ved avvik", width="large"),
+
+                # lesefelt
+                "auto_sats_pct": st.column_config.NumberColumn("Auto (%)", format="%.2f", disabled=True),
+                "skadegrad_eff_pct": st.column_config.NumberColumn("Eff. (%)", format="%.2f", disabled=True),
+                "eml_preview": st.column_config.NumberColumn("EML", format="%,.0f", disabled=True),
+
+                # linker
+                "kart": st.column_config.LinkColumn("Kart", help="Åpner Google Maps søk"),
+
                 "updated": st.column_config.TextColumn("Oppdatert", width="small"),
-                "key": st.column_config.TextColumn("Key", width="small", help="Intern nøkkel"),
+                "key": st.column_config.TextColumn("Key", width="small"),
             },
             column_order=[
                 "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse",
@@ -721,10 +774,11 @@ with tab_scen:
                 "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
                 "manuell_overstyring","manuell_sats_pct","forklaring",
                 "auto_sats_pct","skadegrad_eff_pct","eml_preview",
-                "updated","key"
+                "kart","updated","key"
             ],
-            disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","sum_forsikring","auto_sats_pct","skadegrad_eff_pct","eml_preview","updated","key"],
-            key="brann_editor_v2",
+            disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","sum_forsikring",
+                      "auto_sats_pct","skadegrad_eff_pct","eml_preview","kart","updated","key"],
+            key="brann_editor",
         )
     
         submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
@@ -748,7 +802,7 @@ with tab_scen:
             avvik_fra_default = (
                 (row["risiko_for_brann"] != DEFAULT_RISIKO) or
                 (row["spredning_av_brann"] != DEFAULT_SPRED) or
-                (row["tid_for_slukkeinnsats"] != DEFAULT_SLUKE)
+                (row["tid_for_slukkeinnsats"] != DEFAULT_SLUKKE)
             )
             if avvik_fra_default and not str(row.get("forklaring", "")).strip():
                 avvik_uten_forklaring.append(row["key"])
@@ -782,7 +836,7 @@ with tab_scen:
             db[k]["forklaring_brann"] = str(row.get("forklaring", "")).strip()
     
             # 4) Auto-rate som referanse
-            auto_rate = BRANN_RISIKO_FAKTOR[row["risiko_for_brann"]] * BRANN_SPREDNING_FAKTOR[row["spredning_av_brann"]] * BRANN_SLUKE_FAKTOR[row["tid_for_slukkeinnsats"]]
+            auto_rate = BRANN_RISIKO_FAKTOR[row["risiko_for_brann"]] * BRANN_SPREDNING_FAKTOR[row["spredning_av_brann"]] * BRANN_SLUKKE_FAKTOR[row["tid_for_slukkeinnsats"]]
             db[k]["skadegrad_auto"] = clamp01(auto_rate)
     
             # 5) Stempel + EML metadata
