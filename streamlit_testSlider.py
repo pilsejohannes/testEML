@@ -681,7 +681,7 @@ with tab_scen:
             "skadegrad_eff_pct": round(eff_rate*100.0, 2),
             "eml_preview": int(round(si * eff_rate)),
             # Kartvisning
-            "kart": maps_url(adr, komm),
+            "kart": maps_url(addr, komm),
             "updated": r.get("updated", "")
         })
        
