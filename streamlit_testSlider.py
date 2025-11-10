@@ -619,7 +619,7 @@ with tab_scen:
     meta_key = _scenario_key(scen, sel_kumule)
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
-
+    meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
     existing_desc = db["_scenario_meta"].get(meta_key, {}).get("beskrivelse", "")
     existing_sp_links = meta.get("sharepoint_links", []) or []
     existing_images = meta.get("images", []) or []
