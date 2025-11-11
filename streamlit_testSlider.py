@@ -839,7 +839,7 @@ with tab_scen:
             "beskrivelse": scenariobeskrivelse, # db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
-            db[k]["dekning"] = str(row.get("dekning", dekning)).upper()
+            db[k]["dekning"] = str(row.get("dekning", dekning)).upper(),
 
         }
     
