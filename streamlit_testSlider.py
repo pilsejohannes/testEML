@@ -897,16 +897,16 @@ with tab_scen:
                 "Kjør `pip install reportlab` lokalt eller legg `reportlab>=4.0` i requirements.txt."
             )
             return
-        if dsc is None or dsc.empty:
-            st.warning("Ingen rader å eksportere i valgt kumule.")
-            return
-        with st.spinner("Genererer PDF..."):
-            try:
-                pdf_bytes = make_eml_pdf(sel_kumule, desc_for_pdf, scenario_meta, dsc)
-                st.session_state[PDF_BYTES_KEY] = pdf_bytes
-                st.session_state[PDF_READY_TS_KEY] = now_iso()
-            except Exception as e:
-                st.exception(e)
+       if dsc is None or dsc.empty:
+           st.warning("Ingen rader å eksportere i valgt kumule.")
+           return
+       with st.spinner("Genererer PDF..."):
+           try:
+               pdf_bytes = make_eml_pdf(sel_kumule, desc_for_pdf, scenario_meta, dsc)
+               st.session_state[PDF_BYTES_KEY] = pdf_bytes
+               st.session_state[PDF_READY_TS_KEY] = now_iso()
+           except Exception as e:
+               st.exception(e)
 
     # Knapp som bare trigger generering og lagrer i session_state
     st.button("📄 Eksporter PDF for valgt kumule", type="secondary", on_click=_export_pdf)
