@@ -89,7 +89,8 @@ def _has_reportlab() -> bool:
         return True
     except Exception:
         return False
-
+PDF_BYTES_KEY = "eml_pdf_bytes"
+PDF_READY_TS_KEY = "eml_pdf_ready_ts"
 
 # 👉 Last databasen her:
 db = load_db_from_file(DB_FILENAME)
@@ -726,6 +727,10 @@ try:
 
                # st.success("Valg lagret for kumulesonen.")
 
+if PDF_BYTES_KEY not in st.session_state:
+    st.session_state[PDF_BYTES_KEY] = None
+if PDF_READY_TS_KEY not in st.session_state:
+    st.session_state[PDF_READY_TS_KEY] = None
 
 
 except Exception as e:
@@ -872,7 +877,7 @@ with tab_scen:
 
     # meta til pdf
     scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-    desc_key = f"scenario_desc_{meta_key}"  # legg denne linjen rett før form-elementene
+    desc_key = f"scenario_desc_{meta_key}" 
 
     scenariobeskrivelse = st.text_area(
         "Fritekstbeskrivelse",
@@ -883,22 +888,39 @@ with tab_scen:
     )
     # hent siste lagrede til eksport
     scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-    desc_for_pdf = scenario_meta.get("beskrivelse", existing_desc)
+    desc_for_pdf = st.session_state.get(desc_key) or scenario_meta.get("beskrivelse", existing_desc) or ""
   
-   # Knapp for eksport
-    pdf_bytes = None
-    if st.button("📄 Eksporter PDF for valgt kumule", type="secondary"):
-        if not _has_reportlab():
+    def _export_pdf():
+       if not _has_reportlab():
             st.error(
                 "Modulen 'reportlab' er ikke installert. "
-                "Installer lokalt med `pip install reportlab` eller legg `reportlab>=4.0` i requirements.txt og deploy på nytt."
+                "Kjør `pip install reportlab` lokalt eller legg `reportlab>=4.0` i requirements.txt."
             )
-        else:
+            return
+        if dsc is None or dsc.empty:
+            st.warning("Ingen rader å eksportere i valgt kumule.")
+            return
+        with st.spinner("Genererer PDF..."):
             try:
-                pdf_bytes = make_eml_pdf(sel_kumule, scenariobeskrivelse, scenario_meta, dsc)
+                pdf_bytes = make_eml_pdf(sel_kumule, desc_for_pdf, scenario_meta, dsc)
+                st.session_state[PDF_BYTES_KEY] = pdf_bytes
+                st.session_state[PDF_READY_TS_KEY] = now_iso()
             except Exception as e:
-                st.error(f"Kunne ikke generere PDF: {e}")
+                st.exception(e)
 
+    # Knapp som bare trigger generering og lagrer i session_state
+    st.button("📄 Eksporter PDF for valgt kumule", type="secondary", on_click=_export_pdf)
+    
+    # Vis nedlastningsknapp når bytes er klare
+    if st.session_state.get(PDF_BYTES_KEY):
+        st.success(f"PDF klar ({st.session_state.get(PDF_READY_TS_KEY)}).")
+        st.download_button(
+            "⬇️ Last ned PDF",
+            data=st.session_state[PDF_BYTES_KEY],
+            file_name=f"EML_{sel_kumule}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
     if st.button("⬇️ Eksporter HTML (kan printes til PDF)"):
         try:
             # Bygg en enkel HTML-rapport fra dsc
@@ -933,13 +955,13 @@ with tab_scen:
         except Exception as e:
             st.error(f"Kunne ikke generere HTML: {e}")
     # if pdf_bytes:
-   #     st.download_button(
-   #         "⬇️ Last ned PDF",
-   #         data=pdf_bytes,
-   #         file_name=f"EML_{sel_kumule}.pdf",
-   #         mime="application/pdf",
-   #         use_container_width=True,
-   #     )
+    #     st.download_button(
+    #         "⬇️ Last ned PDF",
+    #         data=pdf_bytes,
+    #         file_name=f"EML_{sel_kumule}.pdf",
+    #         mime="application/pdf",
+    #         use_container_width=True,
+    #     )
 
     # Skjemabygging
     with st.form("brann_scenario_form"):
