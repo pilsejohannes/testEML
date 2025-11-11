@@ -276,6 +276,10 @@ if do_import and up_xlsx is not None:
                     risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
                     adresse = str(row.get(col("adresse"), ""))
                     kunde = str(row.get(col("kundenavn"), ""))
+                    
+                    # --- MIDLERTIDIG FIX GRUNNET MANGLENDE DEKNINGSINFORMASJON I IMPORT
+                    risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
+                    dekning = classify_from_risikonrbeskrivelse(risikonrbeskrivelse)
 
                     navn = f"{kumule}-{risiko}-{adresse}".strip("-")
 
@@ -304,6 +308,18 @@ if do_import and up_xlsx is not None:
                     if rate_eff > 1.0:
                         rate_eff = rate_eff / 100.0
                     rate_eff = clamp01(rate_eff)
+                    
+                    # --- SPLITT PD/BI
+                    def classify_from_risikonrbeskrivelse(txt: str) -> str:
+                        """
+                        Returnerer 'BI' hvis teksten tyder på driftstap, ellers 'PD'.
+                        """
+                        t = (txt or "").strip().lower()
+                        if "driftstap" in t:
+                            return "BI"
+                        if "bygning" in t:
+                            return "PD"
+                        return "PD"
 
                     # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
                     rec = db.get(navn, {})
@@ -312,6 +328,7 @@ if do_import and up_xlsx is not None:
                         "risikonr": risiko,
                         "forsnr": forsnr,
                         "risikonrbeskrivelse": risikonrbeskrivelse,
+                        "dekning": dekning,
                         "adresse": adresse,
                         "kundenavn": kunde,
                         "sum_forsikring": si,
@@ -657,6 +674,12 @@ with tab_scen:
 
         addr = r.get("adresse", "") or ""
         komm = r.get("kommune", "") or ""
+        dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
+        is_bi = (dekning == "BI")
+        eml_total = int(round(si * eff_rate))
+        eml_pd = 0 if is_bi else eml_total
+        eml_bi = eml_total if is_bi else 0
+
         rows.append({
             "key": k,
             # Visningsfelt
@@ -667,6 +690,11 @@ with tab_scen:
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
             "sum_forsikring": si,
+            # Splitt PD/BI
+            "dekning": dekning,
+            "eml_pd": eml_pd,
+            "eml_bi": eml_bi,
+
             # Redigerbare scenariofelt
             "risiko_for_brann": risiko_val,
             "spredning_av_brann": spredning_val,
@@ -686,7 +714,13 @@ with tab_scen:
         })
        
     dsc = pd.DataFrame(rows)
+    tot_pd = int(dsc["eml_pd"].sum()) if not dsc.empty else 0
+    tot_bi = int(dsc["eml_bi"].sum()) if not dsc.empty else 0
     
+    cPD, cBI = st.columns(2)
+    cPD.metric("Sum PD (EML)", f"{tot_pd:,.0f} NOK".replace(",", " "))
+    cBI.metric("Sum BI (EML)", f"{tot_bi:,.0f} NOK".replace(",", " "))
+
     st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
 
     # Skjemabygging
@@ -751,6 +785,10 @@ with tab_scen:
                 "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
                 "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="large"),
                 "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
+                "dekning": st.column_config.TextColumn("Dekning (PD/BI)", width="small"),
+                "eml_pd": st.column_config.NumberColumn("EML PD", format="%,.0f", disabled=True),
+                "eml_bi": st.column_config.NumberColumn("EML BI", format="%,.0f", disabled=True),
+
 
                 # scenario (redigerbare)
                 "risiko_for_brann": st.column_config.SelectboxColumn("Risiko for brann", options=BRANN_RISIKO_CHOICES, required=True),
@@ -801,6 +839,8 @@ with tab_scen:
             "beskrivelse": scenariobeskrivelse, # db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
+            db[k]["dekning"] = str(row.get("dekning", dekning)).upper()
+
         }
     
         # Valider forklaring ved avvik
