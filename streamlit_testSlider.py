@@ -3,28 +3,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import date
-
-import streamlit as st
-
-st.set_page_config(page_title="EML-prototype", layout="wide")
 import streamlit as st, sys
-from pathlib import Path
-st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
 import traceback
 import streamlit as st, traceback
+import uuid
+
+MEDIA_DIR = Path("eml_media")
+MEDIA_DIR.mkdir(exist_ok=True)
+
+st.set_page_config(page_title="EML-prototype", layout="wide")
+st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
 st.set_option("client.showErrorDetails", True)
 
-#def force_rerun():
-#    # Streamlit >= 1.36
-#    if hasattr(st, "rerun"):
-#        st.rerun()
-#        return
-#    # Eldre Streamlit
-#    if hasattr(st, "experimental_rerun"):
-#        st.experimental_rerun()
-#        return
-#    # Nød-løsning: trigge endring i state for å utløse rerun
-#    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
 VERSION = "0.4"
 st.title(f"EML-prototype Slider (v{VERSION})")
@@ -765,10 +755,6 @@ def _scenario_key(scen: str, kumule: str) -> str:
     return f"{scen}::{kumule}".strip()
 
 
-
-
-
-
 # --- VISNING I APP ---
 with tab_scen:
     st.subheader("EML-scenario – Brann")
@@ -784,15 +770,16 @@ with tab_scen:
         st.info("Velg en kumulesone for å vurdere scenarioet.")
         st.stop()
 
-    # 2) Init meta-nøkkel (scenariobeskrivelse lagres separat)
+    # 2) Hente eksisterende meta og bilder
     meta_key = _scenario_key(scen, sel_kumule)
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
-    meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
-    existing_desc = db["_scenario_meta"].get(meta_key, {}).get("beskrivelse", "")
+    cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
+    existing_desc   = cur_meta.get("beskrivelse", "")
+    existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
     existing_sp_links = meta.get("sharepoint_links", []) or []
-    existing_images = meta.get("images", []) or []
 
+      
     # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
     
     DEFAULT_RISIKO   = "Høy"
@@ -875,19 +862,20 @@ with tab_scen:
 
     st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
 
-    # meta til pdf
+    # --------------------------------------
+    # --- PDF ----
+    # --------------------------------------
     scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
+    
     desc_key = f"scenario_desc_{meta_key}" 
-
     scenariobeskrivelse = st.text_area(
         "Fritekstbeskrivelse",
         value=existing_desc,
         placeholder="Forutsetninger, tiltak, spesielle forhold, osv.",
         height=160,
-        key=desc_key,   # <-- viktig
+        key=desc_key,   
     )
-    # hent siste lagrede til eksport
-    scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
+    # hent siste lagrede til eksport av PDF
     desc_for_pdf = st.session_state.get(desc_key) or scenario_meta.get("beskrivelse", existing_desc) or ""
   
     def _export_pdf():
@@ -974,12 +962,6 @@ with tab_scen:
             eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
 
         with meta_col:
-            st.markdown("### Scenariobeskrivelse (gjelder alle risikoer i kumulen)")
-            scenariobeskrivelse = st.text_area(
-                "Fritekstbeskrivelse", value=existing_desc, placeholder="Forutsetninger, tiltak, spesielle forhold, osv.",
-                height=160
-            )
-
             st.markdown("**SharePoint-lenker (én per linje):**")
             sp_default = "\n".join(existing_sp_links) if existing_sp_links else ""
             sp_links_text = st.text_area(
@@ -1069,19 +1051,57 @@ with tab_scen:
         submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
     
     # 5) Persister ved submit (krav: forklaring hvis avvik fra default)
+    
+    # 
+    # 
     if submitted:
         # lagre meta for kumule
         if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
             db["_scenario_meta"] = {}
+        
+        # lese eksisterende meta
+        cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
+        existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
+        
+        saved_paths = []
+        if uploads:
+            from pathlib import Path
+            import uuid
+            MEDIA_DIR = Path("eml_media")
+            MEDIA_DIR.mkdir(exist_ok=True)
+    
+            for f in uploads:
+                # finn filendelse
+                ext = ""
+                if "." in f.name:
+                    ext = "." + f.name.rsplit(".", 1)[-1].lower()
+                elif getattr(f, "type", None) in ("image/png", "image/jpeg", "image/webp"):
+                    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[f.type]
+                # lag filnavn og skriv til disk
+                fname = f"{sel_kumule}_{uuid.uuid4().hex[:8]}{ext or ''}"
+                out_path = MEDIA_DIR / fname
+                out_path.write_bytes(f.getbuffer())
+                saved_paths.append(str(out_path))
+
+        # Slå sammen, dedupliser og begrens antall bilder (maks 8)
+        new_images = existing_images + saved_paths
+        seen = set(); images_dedup = []
+        for p in new_images:
+            if p not in seen:
+                seen.add(p)
+                images_dedup.append(p)
+        images_dedup = images_dedup[:8]
+    
+        # Lagre meta inkl. fritekst og bilder
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
-            "beskrivelse": scenariobeskrivelse, # db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
+            "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
+            "images": images_dedup,
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
-            
-
         }
+        
     
         # Valider forklaring ved avvik
         avvik_uten_forklaring = []
@@ -1140,14 +1160,10 @@ with tab_scen:
         save_db_to_file(DB_FILENAME, db)
         st.success(f"Scenario 'Brann' lagret for {sel_kumule}. Endringer: {changed}.")
         st.rerun()
-              
-        
-       
 
     # ---------- Skjema: Legg til risiko manuelt ----------
    # ---------- Skjema: Legg til risiko manuelt (lagrer på toppnivå i db) ----------
-import uuid
-from datetime import date
+
 
 st.subheader("Legg til risiko manuelt")
 
