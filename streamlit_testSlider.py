@@ -726,7 +726,7 @@ try:
 
                # st.success("Valg lagret for kumulesonen.")
 
-    if _KEY not in st.session_state:
+    if PDF_BYTES_KEY not in st.session_state:
         st.session_state[_KEY] = None
     if PDF_READY_TS_KEY not in st.session_state:
         st.session_state[PDF_READY_TS_KEY] = None
@@ -783,10 +783,10 @@ with tab_scen:
     meta_key = _scenario_key(scen, sel_kumule)
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
-    cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
-    existing_desc   = cur_meta.get("beskrivelse", "")
-    existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
-    existing_sp_links = meta.get("sharepoint_links", []) or []
+    current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
+    existing_desc   = current_meta.get("beskrivelse", "")
+    existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
+    existing_sp_links = current_meta.get("sharepoint_links", []) or []
 
       
     # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
@@ -1069,8 +1069,8 @@ with tab_scen:
             db["_scenario_meta"] = {}
         
         # lese eksisterende meta
-        cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
-        existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
+        current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
+        existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
         
         saved_paths = []
         if uploads:
@@ -1113,6 +1113,7 @@ with tab_scen:
             "kumulesone": sel_kumule,
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
             "images": images_dedup,
+            "sharepoint_links": sp_links_list,
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
