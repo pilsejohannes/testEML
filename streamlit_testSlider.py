@@ -164,7 +164,17 @@ def calc_eml_effective(rec: Dict[str, Any]) -> int:
         return int(round(si * calc_skadegrad_effective(rec)))
     except Exception:
         return 0
-
+ # --- SPLITT PD/BI
+def classify_from_risikonrbeskrivelse(txt: str) -> str:
+    """
+    Returnerer 'BI' hvis teksten tyder på driftstap, ellers 'PD'.
+    """
+    t = (txt or "").strip().lower()
+    if "driftstap" in t:
+        return "BI"
+    if "bygning" in t:
+        return "PD"
+    return "PD"
 
 # ==========================================================
 # Session
@@ -309,17 +319,7 @@ if do_import and up_xlsx is not None:
                         rate_eff = rate_eff / 100.0
                     rate_eff = clamp01(rate_eff)
                     
-                    # --- SPLITT PD/BI
-                    def classify_from_risikonrbeskrivelse(txt: str) -> str:
-                        """
-                        Returnerer 'BI' hvis teksten tyder på driftstap, ellers 'PD'.
-                        """
-                        t = (txt or "").strip().lower()
-                        if "driftstap" in t:
-                            return "BI"
-                        if "bygning" in t:
-                            return "PD"
-                        return "PD"
+                   
 
                     # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
                     rec = db.get(navn, {})
