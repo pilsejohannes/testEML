@@ -1109,7 +1109,7 @@ with tab_scen:
                st.exception(e)
 
     # Knapp som bare trigger generering og lagrer i session_state
-    st.button("📄 Eksporter PDF for valgt kumule", type="secondary", on_click=_export_pdf)
+    #st.button("📄 Eksporter PDF for valgt kumule", type="secondary", on_click=_export_pdf)
     
     # Vis nedlastningsknapp når bytes er klare
     if st.session_state.get(PDF_BYTES_KEY):
