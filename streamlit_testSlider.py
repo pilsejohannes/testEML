@@ -73,14 +73,14 @@ def _fmt_pct(x: float) -> str:
     except Exception:
         return str(x)
 
-def _has_reportlab() -> bool:
-    try:
-        import reportlab  # noqa: F401
-        return True
-    except Exception:
-        return False
-PDF_BYTES_KEY = "eml_pdf_bytes"
-PDF_READY_TS_KEY = "eml_pdf_ready_ts"
+#def _has_reportlab() -> bool:
+#    try:
+#        import reportlab  # noqa: F401
+#        return True
+#    except Exception:
+#        return False
+#PDF_BYTES_KEY = "eml_pdf_bytes"
+#PDF_READY_TS_KEY = "eml_pdf_ready_ts"
 
 # 👉 Last databasen her:
 db = load_db_from_file(DB_FILENAME)
@@ -433,135 +433,6 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
 """
     return html.encode("utf-8")
 
-# ----------------------------------------
-# --- EKSPORT AV PDF - STRUKTURBYGGING ---
-# ----------------------------------------
-def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df, include_links: bool = False):
-    
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import cm
-
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.2*cm)
-    styles = getSampleStyleSheet()
-    H1, H2, N = styles["Heading1"], styles["Heading2"], styles["BodyText"]
-
-    story = []
-
-    # Header
-    story.append(Paragraph(f"EML-scenario – {sel_kumule}", H1))
-    updated_by = meta.get("updated_by", "") or ""
-    updated = meta.get("updated", "") or ""
-    story.append(Paragraph(f"Beregnet av: {updated_by}  &nbsp;&nbsp; Sist oppdatert: {updated}", N))
-    story.append(Spacer(1, 6))
-
-    # Scenariobeskrivelse
-    if scenariobeskrivelse:
-        story.append(Paragraph("Scenariobeskrivelse", H2))
-        # Tillat enkel linebreak
-        for line in str(scenariobeskrivelse).splitlines():
-            story.append(Paragraph(line or "&nbsp;", N))
-        story.append(Spacer(1, 8))
-
-    # SharePoint-lenker
-    if include_links:
-        sp_links = meta.get("sharepoint_links", []) or []
-        if sp_links:
-            story.append(Paragraph("SharePoint-lenker", H2))
-            for u in sp_links:
-                safe = str(u).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-                story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
-            story.append(Spacer(1, 8))
-    
-    #sp_links = meta.get("sharepoint_links", []) or []
-    #if sp_links:
-    #    story.append(Paragraph("SharePoint-lenker", H2))
-    #    for u in sp_links:
-    #        # ReportLab støtter <link> i Paragraph
-    #        safe = str(u).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    #        story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
-    #    story.append(Spacer(1, 8))
-
-    # Bilder (valg: vis opptil 3 først)
-    imgs = meta.get("images", []) or []
-    if imgs:
-        story.append(Paragraph("Bilder", H2))
-        for p in imgs[:3]:
-            try:
-                im = Image(p)
-                # Skaler til bredde
-                max_w = 16.5*cm
-                iw, ih = im.wrap(0, 0)
-                if iw > max_w:
-                    scale = max_w / iw
-                    im._restrictSize(max_w, ih*scale)
-                story.append(im)
-                story.append(Spacer(1, 6))
-            except Exception:
-                story.append(Paragraph(f"• {p}", N))
-        story.append(Spacer(1, 6))
-
-    # Summer PD/BI
-    try:
-        tot_pd = int(dsc_df["eml_pd"].sum()) if "eml_pd" in dsc_df.columns else 0
-        tot_bi = int(dsc_df["eml_bi"].sum()) if "eml_bi" in dsc_df.columns else 0
-    except Exception:
-        tot_pd = tot_bi = 0
-
-    story.append(Paragraph(
-        f"<b>Sum PD (EML):</b> {_fmt_nok(tot_pd)} &nbsp;&nbsp; "
-        f"<b>Sum BI (EML):</b> {_fmt_nok(tot_bi)}", N
-    ))
-    story.append(Spacer(1, 8))
-
-    # Tabell med rader
-    cols = [
-        "adresse", "kundenavn", "kumulesone", "forsnr",
-        "risikonr", "risikonrbeskrivelse", "dekning",
-        "sum_forsikring", "skadegrad_eff_pct", "eml_preview", "eml_pd", "eml_bi"
-    ]
-    headers = [
-        "Adresse", "Kunde", "Kumule", "Forsnr",
-        "Risikonr", "Risikonr-beskrivelse", "Dekning",
-        "SI", "Eff. sats", "EML", "EML PD", "EML BI"
-    ]
-
-    data = [headers]
-    for _, row in dsc_df.iterrows():
-        data.append([
-            str(row.get("adresse","")),
-            str(row.get("kundenavn","")),
-            str(row.get("kumulesone","")),
-            str(row.get("forsnr","")),
-            str(row.get("risikonr","")),
-            str(row.get("risikonrbeskrivelse","")),
-            str(row.get("dekning","")),
-            _fmt_nok(row.get("sum_forsikring", 0)),
-            _fmt_pct(row.get("skadegrad_eff_pct", 0)),
-            _fmt_nok(row.get("eml_preview", 0)),
-            _fmt_nok(row.get("eml_pd", 0)),
-            _fmt_nok(row.get("eml_bi", 0)),
-        ])
-
-    table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f2f6")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#111111")),
-        ("ALIGN", (-5,1), (-1,-1), "RIGHT"),   # tall høyrejustert for de siste kolonnene
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#c8ccd4")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fbfbfd")]),
-    ]))
-    story.append(table)
-
-    doc.build(story)
-    buf.seek(0)
-    return buf.read()
 
 # ----------------------------------------------------------
 # 📚 DATABASE – Import, filtrering og utvalg pr. kumulesone
@@ -931,10 +802,10 @@ try:
 
                # st.success("Valg lagret for kumulesonen.")
 
-    if PDF_BYTES_KEY not in st.session_state:
-        st.session_state[_KEY] = None
-    if PDF_READY_TS_KEY not in st.session_state:
-        st.session_state[PDF_READY_TS_KEY] = None
+#    if PDF_BYTES_KEY not in st.session_state:
+#        st.session_state[_KEY] = None
+#    if PDF_READY_TS_KEY not in st.session_state:
+#        st.session_state[PDF_READY_TS_KEY] = None
 
 
 except Exception as e:
@@ -1076,54 +947,7 @@ with tab_scen:
 
     st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
 
-    # --------------------------------------
-    # --- PDF ----
-    # --------------------------------------
-    scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-    
-    desc_key = f"scenario_desc_{meta_key}" 
-    scenariobeskrivelse = st.text_area(
-        "Fritekstbeskrivelse",
-        value=existing_desc,
-        placeholder="Forutsetninger, tiltak, spesielle forhold, osv.",
-        height=160,
-        key=desc_key,   
-    )
-    # hent siste lagrede til eksport av PDF
-    desc_for_pdf = st.session_state.get(desc_key) or scenario_meta.get("beskrivelse", existing_desc) or ""
-  
-    def _export_pdf():
-       if not _has_reportlab():
-            st.error(
-                "Modulen 'reportlab' er ikke installert. "
-                "Kjør `pip install reportlab` lokalt eller legg `reportlab>=4.0` i requirements.txt."
-            )
-            return
-       if dsc is None or dsc.empty:
-           st.warning("Ingen rader å eksportere i valgt kumule.")
-           return
-       with st.spinner("Genererer PDF..."):
-           try:
-               pdf_bytes = make_eml_pdf(sel_kumule, st.session_state.get(desc_key, "") or existing_desc, scenario_meta, dsc, include_links=False)
-               st.session_state[PDF_BYTES_KEY] = pdf_bytes
-               st.session_state[PDF_READY_TS_KEY] = now_iso()
-           except Exception as e:
-               st.exception(e)
-
-    # Knapp som bare trigger generering og lagrer i session_state
-    #st.button("📄 Eksporter PDF for valgt kumule", type="secondary", on_click=_export_pdf)
-    
-    # Vis nedlastningsknapp når bytes er klare
-    if st.session_state.get(PDF_BYTES_KEY):
-        st.success(f"PDF klar ({st.session_state.get(PDF_READY_TS_KEY)}).")
-        st.download_button(
-            "⬇️ Last ned PDF",
-            data=st.session_state[PDF_BYTES_KEY],
-            file_name=f"EML_{sel_kumule}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-
+ 
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
         try:
             scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
