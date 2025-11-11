@@ -865,7 +865,19 @@ with tab_scen:
 
     # meta til pdf
     scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-    
+    desc_key = f"scenario_desc_{meta_key}"  # legg denne linjen rett før form-elementene
+
+    scenariobeskrivelse = st.text_area(
+        "Fritekstbeskrivelse",
+        value=existing_desc,
+        placeholder="Forutsetninger, tiltak, spesielle forhold, osv.",
+        height=160,
+        key=desc_key,   # <-- viktig
+    )
+    # hent siste lagrede til eksport
+    scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
+    desc_for_pdf = scenario_meta.get("beskrivelse", existing_desc)
+  
     # Knapp for eksport
     pdf_bytes = None
     if st.button("📄 Eksporter PDF for valgt kumule", type="secondary"):
