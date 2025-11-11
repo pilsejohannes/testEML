@@ -127,7 +127,9 @@ st.write("DEBUG: type(db)=", type(db).__name__) #sjekk at db faktisk inneholder 
 
 def clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
-
+# egen variabel for å holde på manuell skadegrad uten "tak"
+def clamp_min0(x: float) -> float:
+    return max(0.0, float(x))
 
 # --- Brann-scenariofaktorer (brukes i scenariofanen) ---
 BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.60, "Høy": 1.0}
@@ -165,7 +167,7 @@ def calc_skadegrad_machine(rec: Dict[str, Any]) -> float:
 # manuell overstyring trumfer maskinell
 def calc_skadegrad_effective(rec: Dict[str, Any]) -> float:
     if rec.get("skadegrad_manual_on"):
-        return clamp01(float(rec.get("skadegrad_manual", 0.0)))
+        return clamp_min0(float(rec.get("skadegrad_manual", 0.0)))
     return calc_skadegrad_machine(rec)
 
 
@@ -1021,7 +1023,7 @@ with tab_scen:
         manual_on  = bool(r.get("skadegrad_manual_on", False))
         manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
     
-        eff_rate = clamp01(manual_pct/100.0) if manual_on else auto_rate
+        eff_rate = (max(0.0, manual_pct/100.0) if manual_on else auto_rate)
 
         addr = r.get("adresse", "") or ""
         komm = r.get("kommune", "") or ""
@@ -1222,7 +1224,7 @@ with tab_scen:
 
                 # manuell (redigerbare)
                 "manuell_overstyring": st.column_config.CheckboxColumn("Manuell sats?"),
-                "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=500.0, step=0.1, format="%.2f"),
+                "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=500.0, step=0.1, format="%.2f", help="Kan manuelt settes >100 %"),
 
                 # forklaring (redigerbar)
                 "forklaring": st.column_config.TextColumn("Forklaring ved avvik", width="large"),
@@ -1345,7 +1347,7 @@ with tab_scen:
     
             # 2) Manuell overstyring
             on  = bool(row["manuell_overstyring"])
-            pct = clamp01(float(row.get("manuell_sats_pct") or 0.0) / 100.0)
+            pct = max(0.0, float(row.get("manuell_sats_pct") or 0.0) / 100.0)
             db[k]["skadegrad_manual_on"] = on
             db[k]["skadegrad_manual"]    = pct
 
