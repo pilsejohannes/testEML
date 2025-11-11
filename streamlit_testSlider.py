@@ -899,7 +899,40 @@ with tab_scen:
             except Exception as e:
                 st.error(f"Kunne ikke generere PDF: {e}")
 
-   # if pdf_bytes:
+   if st.button("⬇️ Eksporter HTML (kan printes til PDF)"):
+    try:
+        # Bygg en enkel HTML-rapport fra dsc
+        html_table = dsc.to_html(index=False)
+        html_doc = f"""
+        <html><head><meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            h1 {{ margin-bottom: .2rem; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ddd; padding: 6px; }}
+            th {{ background: #f0f2f6; text-align: left; }}
+        </style></head><body>
+        <h1>EML-scenario – {sel_kumule}</h1>
+        <p><b>Beregnet av:</b> {scenario_meta.get('updated_by','')} &nbsp;&nbsp; 
+           <b>Sist oppdatert:</b> {scenario_meta.get('updated','')}</p>
+        <h2>Scenariobeskrivelse</h2>
+        <pre style="white-space: pre-wrap">{st.session_state.get(desc_key, scenariobeskrivelse) or ''}</pre>
+        <h2>Risikoer</h2>
+        {html_table}
+        </body></html>
+        """.encode("utf-8")
+
+        st.download_button(
+            "Last ned HTML",
+            data=html_doc,
+            file_name=f"EML_{sel_kumule}.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+        st.info("Åpne HTML-filen i nettleser og velg *Skriv ut → Lagre som PDF* for en PDF-versjon.")
+    except Exception as e:
+        st.error(f"Kunne ikke generere HTML: {e}")
+    # if pdf_bytes:
    #     st.download_button(
    #         "⬇️ Last ned PDF",
    #         data=pdf_bytes,
