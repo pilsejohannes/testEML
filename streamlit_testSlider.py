@@ -727,10 +727,10 @@ try:
 
                # st.success("Valg lagret for kumulesonen.")
 
-if PDF_BYTES_KEY not in st.session_state:
-    st.session_state[PDF_BYTES_KEY] = None
-if PDF_READY_TS_KEY not in st.session_state:
-    st.session_state[PDF_READY_TS_KEY] = None
+    if PDF_BYTES_KEY not in st.session_state:
+        st.session_state[PDF_BYTES_KEY] = None
+    if PDF_READY_TS_KEY not in st.session_state:
+        st.session_state[PDF_READY_TS_KEY] = None
 
 
 except Exception as e:
