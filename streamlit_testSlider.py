@@ -26,7 +26,7 @@ st.set_option("client.showErrorDetails", True)
 #    # Nød-løsning: trigge endring i state for å utløse rerun
 #    st.session_state["_force_rerun_ts"] = datetime.utcnow().isoformat()
 
-VERSION = "0.3"
+VERSION = "0.4"
 st.title(f"EML-prototype Slider (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -82,6 +82,13 @@ def _fmt_pct(x: float) -> str:
         return f"{float(x):.2f}%"
     except Exception:
         return str(x)
+
+def _has_reportlab() -> bool:
+    try:
+        import reportlab  # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 # 👉 Last databasen her:
@@ -878,22 +885,28 @@ with tab_scen:
     scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
     desc_for_pdf = scenario_meta.get("beskrivelse", existing_desc)
   
-    # Knapp for eksport
+   # Knapp for eksport
     pdf_bytes = None
     if st.button("📄 Eksporter PDF for valgt kumule", type="secondary"):
-        try:
-            pdf_bytes = make_eml_pdf(sel_kumule, scenariobeskrivelse, scenario_meta, dsc)
-        except Exception as e:
-            st.error(f"Kunne ikke generere PDF: {e}")
-    
-    if pdf_bytes:
-        st.download_button(
-            "⬇️ Last ned PDF",
-            data=pdf_bytes,
-            file_name=f"EML_{sel_kumule}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        if not _has_reportlab():
+            st.error(
+                "Modulen 'reportlab' er ikke installert. "
+                "Installer lokalt med `pip install reportlab` eller legg `reportlab>=4.0` i requirements.txt og deploy på nytt."
+            )
+        else:
+            try:
+                pdf_bytes = make_eml_pdf(sel_kumule, scenariobeskrivelse, scenario_meta, dsc)
+            except Exception as e:
+                st.error(f"Kunne ikke generere PDF: {e}")
+
+   # if pdf_bytes:
+   #     st.download_button(
+   #         "⬇️ Last ned PDF",
+   #         data=pdf_bytes,
+   #         file_name=f"EML_{sel_kumule}.pdf",
+   #         mime="application/pdf",
+   #         use_container_width=True,
+   #     )
 
     # Skjemabygging
     with st.form("brann_scenario_form"):
