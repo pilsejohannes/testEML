@@ -777,7 +777,7 @@ with tab_scen:
     cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
     existing_desc   = cur_meta.get("beskrivelse", "")
     existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
-    existing_sp_links = meta.get("sharepoint_links", []) or []
+    # existing_sp_links = meta.get("sharepoint_links", []) or []
 
       
     # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
