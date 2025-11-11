@@ -1222,7 +1222,7 @@ with tab_scen:
 
                 # manuell (redigerbare)
                 "manuell_overstyring": st.column_config.CheckboxColumn("Manuell sats?"),
-                "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f"),
+                "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=500.0, step=0.1, format="%.2f"),
 
                 # forklaring (redigerbar)
                 "forklaring": st.column_config.TextColumn("Forklaring ved avvik", width="large"),
