@@ -1123,25 +1123,25 @@ with tab_scen:
         )
 
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
-    try:
-        scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-        html_bytes = make_eml_html(
-            sel_kumule,
-            st.session_state.get(desc_key, "") or existing_desc,
-            scenario_meta,
-            dsc,
-            include_links=False   # behold False, slik du ønsket
-        )
-        st.download_button(
-            "Last ned HTML",
-            data=html_bytes,
-            file_name=f"EML_{sel_kumule}.html",
-            mime="text/html",
-            use_container_width=True,
-        )
-        st.info("Åpne HTML-filen i nettleseren og velg *Skriv ut → Lagre som PDF* for PDF-versjon.")
-    except Exception as e:
-        st.error(f"Kunne ikke generere HTML: {e}")
+        try:
+            scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
+            html_bytes = make_eml_html(
+                sel_kumule,
+                st.session_state.get(desc_key, "") or existing_desc,
+                scenario_meta,
+                dsc,
+                include_links=False   # behold False, slik du ønsket
+            )
+            st.download_button(
+                "Last ned HTML",
+                data=html_bytes,
+                file_name=f"EML_{sel_kumule}.html",
+                mime="text/html",
+                use_container_width=True,
+            )
+            st.info("Åpne HTML-filen i nettleseren og velg *Skriv ut → Lagre som PDF* for PDF-versjon.")
+        except Exception as e:
+            st.error(f"Kunne ikke generere HTML: {e}")
 
  
     # if pdf_bytes:
