@@ -230,7 +230,210 @@ with st.sidebar:
 tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"])
 
 
+# --------------------------------------------------
+# ----------- HTML-eksport -------------------------
+# --------------------------------------------------
+import base64
+from pathlib import Path
+
+def _img_to_data_uri(p: str) -> str:
+    try:
+        ext = Path(p).suffix.lower().lstrip(".") or "png"
+        mime = f"image/{'jpeg' if ext in ('jpg','jpeg') else ('png' if ext=='png' else ext)}"
+        b = Path(p).read_bytes()
+        b64 = base64.b64encode(b).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception:
+        return ""
+
+def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df, include_links: bool = False) -> bytes:
+    # kolonner og headers identisk med PDF (så totalsummer osv. stemmer)
+    cols = [
+        "adresse", "kundenavn", "kumulesone", "forsnr",
+        "risikonr", "risikonrbeskrivelse", "dekning",
+        "sum_forsikring", "skadegrad_eff_pct", "eml_preview", "eml_pd", "eml_bi"
+    ]
+    headers = [
+        "Adresse", "Kunde", "Kumule", "Forsnr",
+        "Risikonr", "Risikonr-beskrivelse", "Dekning",
+        "SI", "Eff. sats", "EML", "EML PD", "EML BI"
+    ]
+
+    # beregn totaler
+    try:
+        tot_pd = int(dsc_df["eml_pd"].sum()) if "eml_pd" in dsc_df.columns else 0
+        tot_bi = int(dsc_df["eml_bi"].sum()) if "eml_bi" in dsc_df.columns else 0
+    except Exception:
+        tot_pd = tot_bi = 0
+
+    # kolonnevekter (gir mer plass til tekstkolonner). Summerer til 100.
+    weights = [18, 14, 7, 7, 7, 18, 5, 8, 6, 10, 10, 10]
+    # NB: weights-lengde må matche antall kolonner
+
+    # bygg <colgroup> med prosentbaserte bredder (kun for eksport)
+    colgroup = "\n".join([f'<col style="width:{w}%;"/>' for w in weights])
+
+    # bygg rader
+    def _fmt_num(x):
+        try:
+            return f"{int(round(float(x))):,}".replace(",", " ")
+        except Exception:
+            return str(x)
+
+    def _fmt_pct(x):
+        try:
+            return f"{float(x):.2f}%"
+        except Exception:
+            return str(x)
+
+    rows_html = []
+    for _, row in dsc_df.iterrows():
+        cells = []
+        for c in cols:
+            val = row.get(c, "")
+            if c in ("sum_forsikring", "eml_preview", "eml_pd", "eml_bi"):
+                cells.append(f"<td class='num'>{_fmt_num(val)}</td>")
+            elif c == "skadegrad_eff_pct":
+                cells.append(f"<td class='num'>{_fmt_pct(val)}</td>")
+            else:
+                # HTML-escape
+                s = str(val).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                cells.append(f"<td>{s}</td>")
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+
+    # bilder (embed som base64 for portabilitet)
+    images = meta.get("images", []) or []
+    img_tags = []
+    for p in images[:8]:
+        uri = _img_to_data_uri(p)
+        if uri:
+            img_tags.append(f"<img src='{uri}' alt='bilde' />")
+
+    # (valgfritt) sharepoint-lenker – IKKE med mindre include_links=True
+    links_html = ""
+    if include_links:
+        sp_links = meta.get("sharepoint_links", []) or []
+        if sp_links:
+            items = []
+            for u in sp_links:
+                esc = str(u).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                items.append(f"<li><a href='{esc}'>{esc}</a></li>")
+            links_html = f"<h2>SharePoint-lenker</h2><ul>{''.join(items)}</ul>"
+
+    # CSS: tabell kun for eksport (fast layout, wrapping, sticky header, A4 marginer)
+    # Tips: endre @page size til 'landscape' hvis du vil ha liggende utskrift.
+    html = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>EML – {sel_kumule}</title>
+<style>
+  :root {{
+    --text: #111;
+    --muted: #666;
+    --bg: #fff;
+    --line: #ddd;
+    --headbg: #f0f2f6;
+  }}
+  @page {{
+    size: A4 portrait;
+    margin: 1.5cm;
+  }}
+  @media print {{
+    .no-print {{ display: none !important; }}
+    table {{ page-break-inside: auto; }}
+    tr {{ page-break-inside: avoid; page-break-after: auto; }}
+    h1, h2, h3 {{ page-break-after: avoid; }}
+  }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.35;
+    font-size: 11pt;
+  }}
+  h1 {{ margin: 0 0 .4rem 0; }}
+  .meta {{ color: var(--muted); margin-bottom: .8rem; }}
+  .summary {{
+    background: #fafafa; border: 1px solid var(--line); padding: .6rem .8rem; margin: .6rem 0 1rem 0;
+  }}
+  .images {{ margin: .5rem 0 1rem 0; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .6rem; }}
+  .images img {{ max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }}
+
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;      /* 👈 viktig: låser breddene fra <colgroup> */
+    font-size: 10pt;
+  }}
+  col {{}} /* bredder fra <colgroup> */
+  thead th {{
+    background: var(--headbg);
+    text-align: left;
+    padding: 6px 6px;
+    border: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+  }}
+  tbody td {{
+    padding: 6px 6px;
+    border: 1px solid var(--line);
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;  /* bryt lange ord/url'er */
+  }}
+  td.num {{ text-align: right; }}
+  .muted {{ color: var(--muted); }}
+  pre {{
+    white-space: pre-wrap;
+    border: 1px solid var(--line);
+    background: #fbfbfb;
+    padding: .6rem .8rem;
+    border-radius: 6px;
+  }}
+</style>
+</head>
+<body>
+  <h1>EML-scenario – {sel_kumule}</h1>
+  <div class="meta">
+    <b>Beregnet av:</b> {meta.get('updated_by','')}&nbsp;&nbsp;
+    <b>Sist oppdatert:</b> {meta.get('updated','')}
+  </div>
+
+  <h2>Scenariobeskrivelse</h2>
+  <pre>{(scenariobeskrivelse or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")}</pre>
+
+  <div class="summary">
+    <b>Sum PD (EML):</b> {_fmt_nok(tot_pd)} &nbsp;&nbsp;
+    <b>Sum BI (EML):</b> {_fmt_nok(tot_bi)}
+  </div>
+
+  {"<div class='images'>" + "".join(img_tags) + "</div>" if img_tags else ""}
+
+  {links_html}
+
+  <h2>Risikoer</h2>
+  <table>
+    <colgroup>
+      {colgroup}
+    </colgroup>
+    <thead>
+      <tr>{"".join(f"<th>{h}</th>" for h in headers)}</tr>
+    </thead>
+    <tbody>
+      {"".join(rows_html)}
+    </tbody>
+  </table>
+
+  <p class="muted" style="margin-top:.8rem;">Eksportert {now_iso()}</p>
+</body>
+</html>
+"""
+    return html.encode("utf-8")
+
+# ----------------------------------------
 # --- EKSPORT AV PDF - STRUKTURBYGGING ---
+# ----------------------------------------
 def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df, include_links: bool = False):
     
     from io import BytesIO
@@ -918,39 +1121,29 @@ with tab_scen:
             mime="application/pdf",
             use_container_width=True,
         )
-    if st.button("⬇️ Eksporter HTML (kan printes til PDF)"):
-        try:
-            # Bygg en enkel HTML-rapport fra dsc
-            html_table = dsc.to_html(index=False)
-            html_doc = f"""
-            <html><head><meta charset="utf-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; }}
-                h1 {{ margin-bottom: .2rem; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid #ddd; padding: 6px; }}
-                th {{ background: #f0f2f6; text-align: left; }}
-            </style></head><body>
-            <h1>EML-scenario – {sel_kumule}</h1>
-            <p><b>Beregnet av:</b> {scenario_meta.get('updated_by','')} &nbsp;&nbsp; 
-               <b>Sist oppdatert:</b> {scenario_meta.get('updated','')}</p>
-            <h2>Scenariobeskrivelse</h2>
-            <pre style="white-space: pre-wrap">{st.session_state.get(desc_key, scenariobeskrivelse) or ''}</pre>
-            <h2>Risikoer</h2>
-            {html_table}
-            </body></html>
-            """.encode("utf-8")
-    
-            st.download_button(
-                "Last ned HTML",
-                data=html_doc,
-                file_name=f"EML_{sel_kumule}.html",
-                mime="text/html",
-                use_container_width=True,
-            )
-            st.info("Åpne HTML-filen i nettleser og velg *Skriv ut → Lagre som PDF* for en PDF-versjon.")
-        except Exception as e:
-            st.error(f"Kunne ikke generere HTML: {e}")
+
+    if st.button("⬇️ Eksporter HTML (print-vennlig)"):
+    try:
+        scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
+        html_bytes = make_eml_html(
+            sel_kumule,
+            st.session_state.get(desc_key, "") or existing_desc,
+            scenario_meta,
+            dsc,
+            include_links=False   # behold False, slik du ønsket
+        )
+        st.download_button(
+            "Last ned HTML",
+            data=html_bytes,
+            file_name=f"EML_{sel_kumule}.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+        st.info("Åpne HTML-filen i nettleseren og velg *Skriv ut → Lagre som PDF* for PDF-versjon.")
+    except Exception as e:
+        st.error(f"Kunne ikke generere HTML: {e}")
+
+ 
     # if pdf_bytes:
     #     st.download_button(
     #         "⬇️ Last ned PDF",
@@ -960,7 +1153,8 @@ with tab_scen:
     #         use_container_width=True,
     #     )
 
-    # Skjemabygging
+
+# Skjemabygging
     with st.form("brann_scenario_form"):
         # ØVERST: meta for HELE scenarioet
         meta_col, img_col = st.columns([2, 1])
