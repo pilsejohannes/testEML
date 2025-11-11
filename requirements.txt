@@ -10,6 +10,7 @@ openpyxl>=3.1
 
 # --- JSON & datalagring ---
 orjson>=3.10
+reportlab>=4.00
 
 # --- Dato og tekstbehandling ---
 python-dateutil>=2.8
