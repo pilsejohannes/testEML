@@ -839,7 +839,7 @@ with tab_scen:
             "beskrivelse": scenariobeskrivelse, # db.get("_scenario_meta", {}).get(meta_key, {}).get("beskrivelse", ""),  # behold eksisterende fritekst hvis du ønsker
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
-            db[k]["dekning"] = str(row.get("dekning", dekning)).upper(),
+            
 
         }
     
@@ -878,6 +878,10 @@ with tab_scen:
             pct = clamp01(float(row.get("manuell_sats_pct") or 0.0) / 100.0)
             db[k]["skadegrad_manual_on"] = on
             db[k]["skadegrad_manual"]    = pct
+
+            # Visning av splitt PD/BI
+            val = str(row.get("dekning", "")).upper()
+            db[k]["dekning"] = "BI" if val == "BI" else "PD"
     
             # 3) Forklaring (lagre strippede strenger)
             db[k]["forklaring_brann"] = str(row.get("forklaring", "")).strip()
