@@ -882,6 +882,7 @@ with tab_scen:
         db["_scenario_meta"] = {}
     current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
     existing_desc   = current_meta.get("beskrivelse", "")
+    existing_images_raw = current_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
     existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
     def _img_path(entry):
         return entry.get("path") if isinstance(entry, dict) else str(entry)
