@@ -231,8 +231,8 @@ tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"])
 
 
 # --- EKSPORT AV PDF - STRUKTURBYGGING ---
-def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df):
-    # Lazy import (kun når vi faktisk eksporterer)
+def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df, include_links: bool = False):
+    
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
@@ -263,14 +263,23 @@ def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df):
         story.append(Spacer(1, 8))
 
     # SharePoint-lenker
-    sp_links = meta.get("sharepoint_links", []) or []
-    if sp_links:
-        story.append(Paragraph("SharePoint-lenker", H2))
-        for u in sp_links:
-            # ReportLab støtter <link> i Paragraph
-            safe = str(u).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
-        story.append(Spacer(1, 8))
+    if include_links:
+        sp_links = meta.get("sharepoint_links", []) or []
+        if sp_links:
+            story.append(Paragraph("SharePoint-lenker", H2))
+            for u in sp_links:
+                safe = str(u).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
+            story.append(Spacer(1, 8))
+    
+    #sp_links = meta.get("sharepoint_links", []) or []
+    #if sp_links:
+    #    story.append(Paragraph("SharePoint-lenker", H2))
+    #    for u in sp_links:
+    #        # ReportLab støtter <link> i Paragraph
+    #        safe = str(u).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    #        story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
+    #    story.append(Spacer(1, 8))
 
     # Bilder (valg: vis opptil 3 først)
     imgs = meta.get("images", []) or []
@@ -777,7 +786,7 @@ with tab_scen:
     cur_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
     existing_desc   = cur_meta.get("beskrivelse", "")
     existing_images = cur_meta.get("images", []) if isinstance(cur_meta.get("images"), list) else []
-    # existing_sp_links = meta.get("sharepoint_links", []) or []
+    existing_sp_links = meta.get("sharepoint_links", []) or []
 
       
     # 3) Tabellvisning: én linje per risiko i valgt kumulesone (kun include=True)
