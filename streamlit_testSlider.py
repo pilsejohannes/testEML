@@ -394,6 +394,7 @@ try:
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
+            "dekning": r.get("dekning", ""),
             "kundenavn": r.get("kundenavn", ""),
             "adresse": r.get("adresse", ""),
             "postnummer": r.get("postnummer", ""),
@@ -413,7 +414,7 @@ try:
     else:
         df = pd.DataFrame(
             columns=[
-                "key","forsnr","risikonr","risikonrbeskrivelse","kundenavn","adresse","postnummer","kommune",
+                "key","forsnr","risikonr","risikonrbeskrivelse","dekning","kundenavn","adresse","postnummer","kommune",
                 "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
                 "kilde","updated"
             ]
@@ -477,7 +478,7 @@ try:
     from copy import deepcopy
     
     view_cols = [
-        "forsnr","risikonr","risikonrbeskrivelse","kundenavn","adresse","postnummer","kommune",
+        "forsnr","risikonr","risikonrbeskrivelse","dekning","kundenavn","adresse","postnummer","kommune",
         "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
     ]
     dff = dff[view_cols].reset_index(drop=True)
@@ -814,14 +815,14 @@ with tab_scen:
                 "key": st.column_config.TextColumn("Key", width="small"),
             },
             column_order=[
-                "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse",
+                "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning",
                 "sum_forsikring",
                 "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
                 "manuell_overstyring","manuell_sats_pct","forklaring",
                 "auto_sats_pct","skadegrad_eff_pct","eml_preview",
                 "kart","updated","key"
             ],
-            disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","sum_forsikring",
+            disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning","sum_forsikring",
                       "auto_sats_pct","skadegrad_eff_pct","eml_preview","kart","updated","key"],
             key="brann_editor",
         )
