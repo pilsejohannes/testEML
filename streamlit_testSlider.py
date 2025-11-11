@@ -231,6 +231,126 @@ with st.sidebar:
 
 tab_db, tab_scen = st.tabs(["📚 Database", "📈 EML-scenario"])
 
+
+# --- EKSPORT AV PDF - STRUKTURBYGGING ---
+def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df):
+    # Lazy import (kun når vi faktisk eksporterer)
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.2*cm)
+    styles = getSampleStyleSheet()
+    H1, H2, N = styles["Heading1"], styles["Heading2"], styles["BodyText"]
+
+    story = []
+
+    # Header
+    story.append(Paragraph(f"EML-scenario – {sel_kumule}", H1))
+    updated_by = meta.get("updated_by", "") or ""
+    updated = meta.get("updated", "") or ""
+    story.append(Paragraph(f"Beregnet av: {updated_by}  &nbsp;&nbsp; Sist oppdatert: {updated}", N))
+    story.append(Spacer(1, 6))
+
+    # Scenariobeskrivelse
+    if scenariobeskrivelse:
+        story.append(Paragraph("Scenariobeskrivelse", H2))
+        # Tillat enkel linebreak
+        for line in str(scenariobeskrivelse).splitlines():
+            story.append(Paragraph(line or "&nbsp;", N))
+        story.append(Spacer(1, 8))
+
+    # SharePoint-lenker
+    sp_links = meta.get("sharepoint_links", []) or []
+    if sp_links:
+        story.append(Paragraph("SharePoint-lenker", H2))
+        for u in sp_links:
+            # ReportLab støtter <link> i Paragraph
+            safe = str(u).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
+        story.append(Spacer(1, 8))
+
+    # Bilder (valg: vis opptil 3 først)
+    imgs = meta.get("images", []) or []
+    if imgs:
+        story.append(Paragraph("Bilder", H2))
+        for p in imgs[:3]:
+            try:
+                im = Image(p)
+                # Skaler til bredde
+                max_w = 16.5*cm
+                iw, ih = im.wrap(0, 0)
+                if iw > max_w:
+                    scale = max_w / iw
+                    im._restrictSize(max_w, ih*scale)
+                story.append(im)
+                story.append(Spacer(1, 6))
+            except Exception:
+                story.append(Paragraph(f"• {p}", N))
+        story.append(Spacer(1, 6))
+
+    # Summer PD/BI
+    try:
+        tot_pd = int(dsc_df["eml_pd"].sum()) if "eml_pd" in dsc_df.columns else 0
+        tot_bi = int(dsc_df["eml_bi"].sum()) if "eml_bi" in dsc_df.columns else 0
+    except Exception:
+        tot_pd = tot_bi = 0
+
+    story.append(Paragraph(
+        f"<b>Sum PD (EML):</b> {_fmt_nok(tot_pd)} &nbsp;&nbsp; "
+        f"<b>Sum BI (EML):</b> {_fmt_nok(tot_bi)}", N
+    ))
+    story.append(Spacer(1, 8))
+
+    # Tabell med rader
+    cols = [
+        "adresse", "kundenavn", "kumulesone", "forsnr",
+        "risikonr", "risikonrbeskrivelse", "dekning",
+        "sum_forsikring", "skadegrad_eff_pct", "eml_preview", "eml_pd", "eml_bi"
+    ]
+    headers = [
+        "Adresse", "Kunde", "Kumule", "Forsnr",
+        "Risikonr", "Risikonr-beskrivelse", "Dekning",
+        "SI", "Eff. sats", "EML", "EML PD", "EML BI"
+    ]
+
+    data = [headers]
+    for _, row in dsc_df.iterrows():
+        data.append([
+            str(row.get("adresse","")),
+            str(row.get("kundenavn","")),
+            str(row.get("kumulesone","")),
+            str(row.get("forsnr","")),
+            str(row.get("risikonr","")),
+            str(row.get("risikonrbeskrivelse","")),
+            str(row.get("dekning","")),
+            _fmt_nok(row.get("sum_forsikring", 0)),
+            _fmt_pct(row.get("skadegrad_eff_pct", 0)),
+            _fmt_nok(row.get("eml_preview", 0)),
+            _fmt_nok(row.get("eml_pd", 0)),
+            _fmt_nok(row.get("eml_bi", 0)),
+        ])
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f2f6")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#111111")),
+        ("ALIGN", (-5,1), (-1,-1), "RIGHT"),   # tall høyrejustert for de siste kolonnene
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#c8ccd4")),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fbfbfd")]),
+    ]))
+    story.append(table)
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
 # ----------------------------------------------------------
 # 📚 DATABASE – Import, filtrering og utvalg pr. kumulesone
 # ----------------------------------------------------------
@@ -633,124 +753,6 @@ def _scenario_key(scen: str, kumule: str) -> str:
     return f"{scen}::{kumule}".strip()
 
 
-# --- EKSPORT AV PDF ---
-def make_eml_pdf(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df):
-    # Lazy import (kun når vi faktisk eksporterer)
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import cm
-
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.2*cm)
-    styles = getSampleStyleSheet()
-    H1, H2, N = styles["Heading1"], styles["Heading2"], styles["BodyText"]
-
-    story = []
-
-    # Header
-    story.append(Paragraph(f"EML-scenario – {sel_kumule}", H1))
-    updated_by = meta.get("updated_by", "") or ""
-    updated = meta.get("updated", "") or ""
-    story.append(Paragraph(f"Beregnet av: {updated_by}  &nbsp;&nbsp; Sist oppdatert: {updated}", N))
-    story.append(Spacer(1, 6))
-
-    # Scenariobeskrivelse
-    if scenariobeskrivelse:
-        story.append(Paragraph("Scenariobeskrivelse", H2))
-        # Tillat enkel linebreak
-        for line in str(scenariobeskrivelse).splitlines():
-            story.append(Paragraph(line or "&nbsp;", N))
-        story.append(Spacer(1, 8))
-
-    # SharePoint-lenker
-    sp_links = meta.get("sharepoint_links", []) or []
-    if sp_links:
-        story.append(Paragraph("SharePoint-lenker", H2))
-        for u in sp_links:
-            # ReportLab støtter <link> i Paragraph
-            safe = str(u).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            story.append(Paragraph(f"• <link href='{safe}' color='blue'>{safe}</link>", N))
-        story.append(Spacer(1, 8))
-
-    # Bilder (valg: vis opptil 3 først)
-    imgs = meta.get("images", []) or []
-    if imgs:
-        story.append(Paragraph("Bilder", H2))
-        for p in imgs[:3]:
-            try:
-                im = Image(p)
-                # Skaler til bredde
-                max_w = 16.5*cm
-                iw, ih = im.wrap(0, 0)
-                if iw > max_w:
-                    scale = max_w / iw
-                    im._restrictSize(max_w, ih*scale)
-                story.append(im)
-                story.append(Spacer(1, 6))
-            except Exception:
-                story.append(Paragraph(f"• {p}", N))
-        story.append(Spacer(1, 6))
-
-    # Summer PD/BI
-    try:
-        tot_pd = int(dsc_df["eml_pd"].sum()) if "eml_pd" in dsc_df.columns else 0
-        tot_bi = int(dsc_df["eml_bi"].sum()) if "eml_bi" in dsc_df.columns else 0
-    except Exception:
-        tot_pd = tot_bi = 0
-
-    story.append(Paragraph(
-        f"<b>Sum PD (EML):</b> {_fmt_nok(tot_pd)} &nbsp;&nbsp; "
-        f"<b>Sum BI (EML):</b> {_fmt_nok(tot_bi)}", N
-    ))
-    story.append(Spacer(1, 8))
-
-    # Tabell med rader
-    cols = [
-        "adresse", "kundenavn", "kumulesone", "forsnr",
-        "risikonr", "risikonrbeskrivelse", "dekning",
-        "sum_forsikring", "skadegrad_eff_pct", "eml_preview", "eml_pd", "eml_bi"
-    ]
-    headers = [
-        "Adresse", "Kunde", "Kumule", "Forsnr",
-        "Risikonr", "Risikonr-beskrivelse", "Dekning",
-        "SI", "Eff. sats", "EML", "EML PD", "EML BI"
-    ]
-
-    data = [headers]
-    for _, row in dsc_df.iterrows():
-        data.append([
-            str(row.get("adresse","")),
-            str(row.get("kundenavn","")),
-            str(row.get("kumulesone","")),
-            str(row.get("forsnr","")),
-            str(row.get("risikonr","")),
-            str(row.get("risikonrbeskrivelse","")),
-            str(row.get("dekning","")),
-            _fmt_nok(row.get("sum_forsikring", 0)),
-            _fmt_pct(row.get("skadegrad_eff_pct", 0)),
-            _fmt_nok(row.get("eml_preview", 0)),
-            _fmt_nok(row.get("eml_pd", 0)),
-            _fmt_nok(row.get("eml_bi", 0)),
-        ])
-
-    table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f2f6")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#111111")),
-        ("ALIGN", (-5,1), (-1,-1), "RIGHT"),   # tall høyrejustert for de siste kolonnene
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#c8ccd4")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fbfbfd")]),
-    ]))
-    story.append(table)
-
-    doc.build(story)
-    buf.seek(0)
-    return buf.read()
 
 
 
