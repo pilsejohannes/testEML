@@ -726,8 +726,8 @@ try:
 
                # st.success("Valg lagret for kumulesonen.")
 
-    if PDF_BYTES_KEY not in st.session_state:
-        st.session_state[PDF_BYTES_KEY] = None
+    if _KEY not in st.session_state:
+        st.session_state[_KEY] = None
     if PDF_READY_TS_KEY not in st.session_state:
         st.session_state[PDF_READY_TS_KEY] = None
 
@@ -899,7 +899,7 @@ with tab_scen:
            return
        with st.spinner("Genererer PDF..."):
            try:
-               pdf_bytes = make_eml_pdf(sel_kumule, desc_for_pdf, scenario_meta, dsc)
+               pdf_bytes = make_eml_pdf(sel_kumule, st.session_state.get(desc_key, "") or existing_desc, scenario_meta, dsc, include_links=False)
                st.session_state[PDF_BYTES_KEY] = pdf_bytes
                st.session_state[PDF_READY_TS_KEY] = now_iso()
            except Exception as e:
@@ -1100,6 +1100,12 @@ with tab_scen:
                 seen.add(p)
                 images_dedup.append(p)
         images_dedup = images_dedup[:8]
+
+        # Sharepoint-innliming
+        sp_links_list = [
+            ln.strip() for ln in (sp_links_text or "").splitlines()
+            if ln.strip()
+        ]
     
         # Lagre meta inkl. fritekst og bilder
         db["_scenario_meta"][meta_key] = {
