@@ -302,17 +302,11 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
                 s = str(val).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 cells.append(f"<td>{s}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
-
-    # caping av antall bilder som hentes
-    imgs_raw = meta.get("images", []) or []
-
-    def _img_path(e):
-        return e.get("path") if isinstance(e, dict) else str(e)
-    img_paths = [_img_path(e) for e in imgs_raw]
-    
+       
     # bilder (embed som base64 for portabilitet)
+    images = meta.get("images", []) or []
     img_tags = []
-    for p in img_paths[:8]:        # maks 8 bilder
+    for p in images[:8]:
         uri = _img_to_data_uri(p)
         if uri:
             img_tags.append(f"<img src='{uri}' alt='bilde' />")
@@ -962,29 +956,37 @@ with tab_scen:
 
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
         try:
-            scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-            meta_for_html = dict(scenario_meta) # etablere uttrekk til html uten å overskrive originalbilde i applikasjonen
-            meta_for_html["images"] = existing_images
-            
-            desc_for_html = st.session_state.get(desc_key, "") or existing_desc or ""
-
-            html_bytes = make_eml_html(
-                sel_kumule=sel_kumule,
-                scenariobeskrivelse=desc_for_html,
-                meta=meta_for_html,
-                dsc_df=dsc,
-                #include_links=False,   # fortsatt uten SharePoint-lenker
-            )
-            st.download_button(
-                "Last ned HTML",
-                data=html_bytes,
-                file_name=f"EML_{sel_kumule}.html",
-                mime="text/html",
-                use_container_width=True,
-            )
-            st.info("Åpne HTML-filen i nettleseren og velg *Skriv ut → Lagre som PDF* for PDF-versjon.")
+            scenario_meta = {}
+            if isinstance(db.get("_scenario_meta"), dict):
+                scenario_meta = db["_scenario_meta"].get(meta_key, {}) or {}
+    
+                # Bruk samme bilder som i UI – existing_images er det du ser på skjermen
+                # (men scenario_meta["images"] vil normalt være lik, etter en lagring)
+                meta_for_html = dict(scenario_meta)
+                meta_for_html["images"] = existing_images
+        
+                # Tekst til eksport
+                desc_for_html = st.session_state.get(desc_key, "") or existing_desc or ""
+        
+                html_doc = make_eml_html(
+                    sel_kumule=sel_kumule,
+                    scenariobeskrivelse=desc_for_html,
+                    meta=meta_for_html,
+                    dsc_df=dsc,
+                    include_links=True,   # 👈 nå tar vi med SharePoint-lenker i HTML
+                )
+        
+                st.download_button(
+                    "Last ned HTML",
+                    data=html_doc,
+                    file_name=f"EML_{sel_kumule}.html",
+                    mime="text/html",
+                    use_container_width=True,
+                )
+                st.info("Åpne HTML-filen i nettleser og velg *Skriv ut → Lagre som PDF* for en PDF-versjon.")
         except Exception as e:
             st.error(f"Kunne ikke generere HTML: {e}")
+        
 
  
     # if pdf_bytes:
@@ -1163,14 +1165,14 @@ with tab_scen:
         # Lagre meta inkl. fritekst og bilder
         if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
             db["_scenario_meta"] = {}
-        prev_links = (current_meta.get("sharepoint_links") or []) if isinstance(current_meta, dict) else []
+        #prev_links = (current_meta.get("sharepoint_links") or []) if isinstance(current_meta, dict) else []
         
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
             "images": images_final,
-            "sharepoint_links": prev_links,   
+            "sharepoint_links": sp_links_list,   
             # behold som data, men ikke i PDF
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
