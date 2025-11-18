@@ -963,12 +963,17 @@ with tab_scen:
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
         try:
             scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-            html_bytes = make_eml_html(
-                sel_kumule,
-                st.session_state.get(desc_key, "") or existing_desc,
-                scenario_meta,
-                dsc,
-                include_links=False   # behold False, slik du ønsket
+            meta_for_html = dict(scenario_meta) # etablere uttrekk til html uten å overskrive originalbilde i applikasjonen
+            meta_for_html["images"] = existing_images
+            
+            desc_for_html = st.session_state.get(desc_key, "") or existing_desc or ""
+
+            html_doc = make_eml_html(
+                sel_kumule=sel_kumule,
+                scenariobeskrivelse=desc_for_html,
+                meta=meta_for_html,
+                dsc_df=dsc,
+                #include_links=False,   # fortsatt uten SharePoint-lenker
             )
             st.download_button(
                 "Last ned HTML",
@@ -1022,14 +1027,14 @@ with tab_scen:
                 st.caption("Lagrede bilder:")
                 for p in existing_images[:4]:  # vis inntil 4
                     try:
-                        st.image(p, use_column_width=True, caption=os.path.basename(p))
+                        st.image(p, use_container_width=True, caption=os.path.basename(p))
                     except Exception:
                         st.write(f"• {p}")
 
             if uploads:
                 st.caption("Nyopplastede (forhåndsvisning):")
                 for f in uploads:
-                    st.image(f, use_column_width=True, caption=f.name)
+                    st.image(f, use_container_width=True, caption=f.name)
 
         st.markdown("---")
         st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
@@ -1174,7 +1179,7 @@ with tab_scen:
             to_keep = []
             for i, p in enumerate(existing_image_paths):
                 c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
-                st.image(p, use_column_width=True)
+                st.image(p, use_container_width=True)
                 if c: to_keep.append(i)
         # I submit-blokka, før du bygger normalized:
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
