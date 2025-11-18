@@ -987,7 +987,7 @@ with tab_scen:
 
 
 # Skjemabygging
-    submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+    
     with st.form("brann_scenario_form"):
         # ØVERST: meta for HELE scenarioet
         meta_col, img_col = st.columns([2, 1])
@@ -1084,7 +1084,7 @@ with tab_scen:
             key="brann_editor",
         )
     
-    #submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+    submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
     
     # 5) Persister ved submit (krav: forklaring hvis avvik fra default)
     
