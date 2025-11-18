@@ -1002,7 +1002,7 @@ with tab_scen:
             sp_default = "\n".join(existing_sp_links) if existing_sp_links else ""
             sp_links_text = st.text_area(
                 "Lenker", value=sp_default,
-                placeholder="https://contoso.sharepoint.com/sites/.../Dok1.pdf\nhttps://contoso.sharepoint.com/sites/.../Mappe/",
+                placeholder="https://.../Dok1.pdf\nhttps://.../Mappe/",
                 height=90
             )
 
@@ -1013,9 +1013,9 @@ with tab_scen:
                 accept_multiple_files=True
             )
             # Forhåndsvis eksisterende
-            if existing_images_paths:
+            if existing_images:
                 st.caption("Lagrede bilder:")
-                for p in existing_images_path[:4]:  # vis inntil 4
+                for p in existing_images[:4]:  # vis inntil 4
                     try:
                         st.image(p, use_container_width=True, caption=os.path.basename(p))
                     except Exception:
@@ -1119,7 +1119,7 @@ with tab_scen:
                 saved_paths.append(str(out_path))
         
         # ------ slå sammen eksisterende og nye bilder ------
-        combined = existing_image_paths + saved_paths
+        combined = list(existing_images) + saved_paths
         
         seen = set()
         images_final = []
@@ -1130,9 +1130,11 @@ with tab_scen:
         
         # maks 8 bilder
         images_final = images_final[:8]
-
-        
-    
+        # ------- Sharepoint-innliming -------
+        sp_links_list = [
+            ln.strip() for ln in (sp_links_text or "").splitlines()
+            if ln.strip()
+           
         # Lagre meta inkl. fritekst og bilder
         if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
             db["_scenario_meta"] = {}
@@ -1142,7 +1144,7 @@ with tab_scen:
             "scenario": scen,
             "kumulesone": sel_kumule,
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
-            "images": images_dedup,
+            "images": images_final,
             "sharepoint_links": sp_links_list,   
             # behold som data, men ikke i PDF
             "updated": now_iso(),
@@ -1157,10 +1159,7 @@ with tab_scen:
        
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
 
-        # Sharepoint-innliming
-        sp_links_list = [
-            ln.strip() for ln in (sp_links_text or "").splitlines()
-            if ln.strip()
+        
         ]
         
     
