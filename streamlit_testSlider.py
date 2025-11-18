@@ -1114,7 +1114,7 @@ with tab_scen:
         
         # ------ lagre nye bilder til disk ------
         saved_paths = []
-       if uploads:
+        if uploads:
             for uploaded_file in uploads:
                 file_bytes = uploaded_file.getbuffer().tobytes()
                 file_hash = md5_bytes(file_bytes)
