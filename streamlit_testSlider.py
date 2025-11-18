@@ -1151,15 +1151,7 @@ with tab_scen:
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
-        with st.expander("Bilder i kumulen"):
-            to_keep = []
-            for i, p in enumerate(existing_image_paths):
-                c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
-                st.image(p, use_container_width=True)
-                if c: to_keep.append(i)
-       
-        existing_images_raw = [existing_images_raw[i] for i in to_keep]
-    
+            
         # Krav om forklaring ved avvik
         avvik_uten_forklaring = []
         for _, row in edited_dsc.iterrows():
