@@ -854,15 +854,14 @@ with tab_scen:
     # 2) Hente eksisterende meta og bilder
     meta_key = _scenario_key(scen, sel_kumule)
     desc_key = f"scenario_desk_{meta_key}"
+    
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
+    
     current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
+    
     existing_desc   = current_meta.get("beskrivelse", "")
-    existing_images_raw = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
-    existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
-    def _img_path(entry):
-        return entry.get("path") if isinstance(entry, dict) else str(entry)
-    existing_image_paths = [_img_path(e) for e in existing_images_raw]
+    existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []   
     existing_sp_links = current_meta.get("sharepoint_links", []) or []
 
       
@@ -953,9 +952,11 @@ with tab_scen:
             scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) \
                 if isinstance(db.get("_scenario_meta"), dict) else {}
 
+            desc_for_html = st.session_state.get(desc_key, existing_desc) or ""
+            
             html_bytes = make_eml_html(
                 sel_kumule,
-                st.session_state.get(desc_key, "") or existing_desc,
+                desc_for_html                
                 scenario_meta,
                 dsc,
                 include_links=True,  # ta med SharePoint-lenker også
@@ -1091,45 +1092,49 @@ with tab_scen:
     # 
     # 
     if submitted:
-        # lagre meta for kumule
+        # ------ lagre meta for kumule ------
         if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
             db["_scenario_meta"] = {}
         
-        # lese eksisterende meta
+        # ------ lese eksisterende meta ------
         current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
         existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
         
+        MEDIA_DIR = Path("eml_media")
+        MEDIA_DIR.mkdir(exist_ok=True)
+        
         # ------ lagre nye bilder til disk ------
         saved_paths = []
-        if uploads:
-            MEDIA_DIR = Path("eml_media")
-            MEDIA_DIR.mkdir(exist_ok=True)
-        
-            for f in uploads:
-                # filendelse
-                ext = ""
-                if "." in f.name:
-                    ext = "." + f.name.rsplit(".", 1)[-1].lower()
-                elif getattr(f, "type", None) in ("image/png", "image/jpeg", "image/webp"):
-                    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[f.type]
-        
+        if uploads:    
+            for uploaded_file in uploads:
+                ext = Path(uploaded_file.name).suffix.lower()
+                file_bytes = uploaded_file.getbuffer().tobytes()
                 filename = f"{sel_kumule}_{uuid.uuid4().hex[:8]}{ext or ''}"
                 out_path = MEDIA_DIR / filename
-                out_path.write_bytes(f.getbuffer())
+                out_path.write_bytes(file_bytes)
                 saved_paths.append(str(out_path))
+        
+               
         
         # ------ slå sammen eksisterende og nye bilder ------
         combined = list(existing_images) + saved_paths
         
         seen = set()
         images_final = []
-        for p in combined:
-            if p not in seen:
-                seen.add(p)
-                images_final.append(p)
+        for path in combined:
+            if path not in seen:
+                seen.add(path)
+                images_final.append(path)
         
         # maks 8 bilder
         images_final = images_final[:8]
+
+        # sp-lenker
+        sp_links_list = [
+            line.strip()
+            for line in (sp_links_text or "").splitlines()
+            if line.strip()
+        ]
        
            
         # Lagre meta inkl. fritekst og bilder
@@ -1143,7 +1148,6 @@ with tab_scen:
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
             "images": images_final,
             "sharepoint_links": sp_links_list,   
-            # behold som data, men ikke i PDF
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
@@ -1155,12 +1159,8 @@ with tab_scen:
                 if c: to_keep.append(i)
        
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
-
-        
-        
-        
     
-        # Valider forklaring ved avvik
+        # Krav om forklaring ved avvik
         avvik_uten_forklaring = []
         for _, row in edited_dsc.iterrows():
             avvik_fra_default = (
