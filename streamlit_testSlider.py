@@ -1012,9 +1012,9 @@ with tab_scen:
                 accept_multiple_files=True
             )
             # Forhåndsvis eksisterende
-            if existing_images:
+            if existing_images_paths:
                 st.caption("Lagrede bilder:")
-                for p in existing_images[:4]:  # vis inntil 4
+                for p in existing_images_path[:4]:  # vis inntil 4
                     try:
                         st.image(p, use_container_width=True, caption=os.path.basename(p))
                     except Exception:
@@ -1098,54 +1098,37 @@ with tab_scen:
         current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
         existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
         
+        # ------ lagre nye bilder til disk ------
         saved_paths = []
-        
-        from pathlib import Path
-        import uuid
-        MEDIA_DIR = Path("eml_media")
-        MEDIA_DIR.mkdir(exist_ok=True)
-        current_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
-        existing_images_raw = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
-        normalizes = []
-        existing_hashes = set ()
-        for e in existing_images_raw:
-            if isinstance(e, dict) and "path" in e:
-                normalized.append({"path": e["path"], "md5": e.get("md5")})
-                if e.get("md5"):
-                    existing_hashes.add(e["md5"])
-            elif isinstance(e, str):
-                # gammel lagring uten md5 – forsøk å beregne
-                md5 = None
-                try:
-                    md5 = md5_bytes(Path(e).read_bytes())
-                except Exception:
-                    pass
-                normalized.append({"path": e, "md5": md5})
-                if md5:
-                    existing_hashes.add(md5)
-        new_items = []
         if uploads:
-            for f in uploads:
-                # bytes + hash
-                b = f.getbuffer().tobytes()
-                h = md5_bytes(b)
-                if h in existing_hashes:
-                    # samme innhold finnes allerede – hopp over
-                    continue
-                # finn filendelse
-            ext = ""
-            if "." in f.name:
-                ext = "." + f.name.rsplit(".", 1)[-1].lower()
-            elif getattr(f, "type", None) in ("image/png", "image/jpeg", "image/webp"):
-                ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[f.type]
-            # skriv fil
-            fname = f"{sel_kumule}_{uuid.uuid4().hex[:8]}{ext or ''}"
-            out_path = MEDIA_DIR / fname
-            out_path.write_bytes(b)
-            new_items.append({"path": str(out_path), "md5": h})
-            existing_hashes.add(h)
+            MEDIA_DIR = Path("eml_media")
+            MEDIA_DIR.mkdir(exist_ok=True)
         
-        images_final = (normalized + new_items)[:8]
+            for f in uploads:
+                # filendelse
+                ext = ""
+                if "." in f.name:
+                    ext = "." + f.name.rsplit(".", 1)[-1].lower()
+                elif getattr(f, "type", None) in ("image/png", "image/jpeg", "image/webp"):
+                    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[f.type]
+        
+                filename = f"{sel_kumule}_{uuid.uuid4().hex[:8]}{ext or ''}"
+                out_path = MEDIA_DIR / filename
+                out_path.write_bytes(f.getbuffer())
+                saved_paths.append(str(out_path))
+        
+        # ------ slå sammen eksisterende og nye bilder ------
+        combined = existing_image_paths + saved_paths
+        
+        seen = set()
+        images_final = []
+        for p in combined:
+            if p not in seen:
+                seen.add(p)
+                images_final.append(p)
+        
+        # maks 8 bilder
+        images_final = images_final[:8]
 
         
     
