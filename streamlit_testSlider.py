@@ -272,7 +272,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
     weights = [18, 14, 7, 7, 7, 18, 5, 8, 6, 10, 10, 10]
     # NB: weights-lengde må matche antall kolonner
 
-    # bygg <colgroup> med prosentbaserte bredder (kun for eksport)
+    # bygg kolonnegrupper <colgroup> med prosentbaserte bredder (kun for eksport)
     colgroup = "\n".join([f'<col style="width:{w}%;"/>' for w in weights])
 
     # bygg rader
@@ -308,26 +308,11 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
 
     def _img_path(e):
         return e.get("path") if isinstance(e, dict) else str(e)
+    img_paths = [_img_path(e) for e in imgs_raw]
     
-    imgs_paths = [_img_path(e) for e in imgs_raw]
-    if imgs_paths:
-        story.append(Paragraph("Bilder", H2))
-        for p in imgs_paths[:3]:
-            try:
-                im = Image(p)
-                max_w = 16.5*cm
-                iw, ih = im.wrap(0, 0)
-                if iw > max_w:
-                    scale = max_w / iw
-                    im._restrictSize(max_w, ih*scale)
-                story.append(im); story.append(Spacer(1, 6))
-            except Exception:
-                story.append(Paragraph(f"• {p}", N))
-        story.append(Spacer(1, 6))
     # bilder (embed som base64 for portabilitet)
-    images = meta.get("images", []) or []
     img_tags = []
-    for p in images[:8]:
+    for p in img_paths[:8]:        # maks 8 bilder
         uri = _img_to_data_uri(p)
         if uri:
             img_tags.append(f"<img src='{uri}' alt='bilde' />")
@@ -342,7 +327,10 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
                 esc = str(u).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 items.append(f"<li><a href='{esc}'>{esc}</a></li>")
             links_html = f"<h2>SharePoint-lenker</h2><ul>{''.join(items)}</ul>"
-
+    # escape scenariotekst
+    scen_txt = (scenariobeskrivelse or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+    
+    
     # CSS: tabell kun for eksport (fast layout, wrapping, sticky header, A4 marginer)
     # Tips: endre @page size til 'landscape' hvis du vil ha liggende utskrift.
     html = f"""<!doctype html>
@@ -386,10 +374,9 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
   table {{
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;      /* 👈 viktig: låser breddene fra <colgroup> */
+    table-layout: fixed;
     font-size: 10pt;
   }}
-  col {{}} /* bredder fra <colgroup> */
   thead th {{
     background: var(--headbg);
     text-align: left;
@@ -403,7 +390,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
     border: 1px solid var(--line);
     vertical-align: top;
     word-wrap: break-word;
-    overflow-wrap: anywhere;  /* bryt lange ord/url'er */
+    overflow-wrap: anywhere;
   }}
   td.num {{ text-align: right; }}
   .muted {{ color: var(--muted); }}
@@ -424,7 +411,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
   </div>
 
   <h2>Scenariobeskrivelse</h2>
-  <pre>{(scenariobeskrivelse or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")}</pre>
+  <pre>{scen_txt}</pre>
 
   <div class="summary">
     <b>Sum PD (EML):</b> {_fmt_nok(tot_pd)} &nbsp;&nbsp;
