@@ -1083,7 +1083,7 @@ with tab_scen:
             key="brann_editor",
         )
     
-        submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+    submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
     
     # 5) Persister ved submit (krav: forklaring hvis avvik fra default)
     
@@ -1153,7 +1153,7 @@ with tab_scen:
                 c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
                 st.image(p, use_container_width=True)
                 if c: to_keep.append(i)
-        # I submit-blokka, før du bygger normalized:
+       
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
 
         # Sharepoint-innliming
