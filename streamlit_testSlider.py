@@ -993,7 +993,7 @@ with tab_scen:
         meta_col, img_col = st.columns([2, 1])
         top_c1, top_c2 = st.columns(2)
         with top_c1:
-            eml_beregnet_dato = st.text_input("EML beregnet dato (ISO-8601)", value=date.today().isoformat())
+            eml_beregnet_dato = st.text_input("EML beregnet dato", value=date.today().isoformat())
         with top_c2:
             eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
 
@@ -1084,7 +1084,7 @@ with tab_scen:
             key="brann_editor",
         )
     
-    submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
+        submitted = st.form_submit_button("💾 Lagre scenario (Brann) for kumulesonen")
     
     # 5) Persister ved submit (krav: forklaring hvis avvik fra default)
     
