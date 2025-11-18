@@ -249,7 +249,7 @@ def _img_to_data_uri(p: str) -> str:
         return ""
 
 def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df, include_links: bool = False) -> bytes:
-    # kolonner og headers identisk med PDF (så totalsummer osv. stemmer)
+    # kolonner og headers (så totalsummer osv. stemmer)
     cols = [
         "adresse", "kundenavn", "kumulesone", "forsnr",
         "risikonr", "risikonrbeskrivelse", "dekning",
@@ -270,12 +270,9 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
 
     # kolonnevekter (gir mer plass til tekstkolonner). Summerer til 100.
     weights = [18, 14, 7, 7, 7, 18, 5, 8, 6, 10, 10, 10]
-    # NB: weights-lengde må matche antall kolonner
 
-    # bygg kolonnegrupper <colgroup> med prosentbaserte bredder (kun for eksport)
     colgroup = "\n".join([f'<col style="width:{w}%;"/>' for w in weights])
 
-    # bygg rader
     def _fmt_num(x):
         try:
             return f"{int(round(float(x))):,}".replace(",", " ")
@@ -298,11 +295,10 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
             elif c == "skadegrad_eff_pct":
                 cells.append(f"<td class='num'>{_fmt_pct(val)}</td>")
             else:
-                # HTML-escape
                 s = str(val).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 cells.append(f"<td>{s}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
-       
+
     # bilder (embed som base64 for portabilitet)
     images = meta.get("images", []) or []
     img_tags = []
@@ -311,7 +307,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
         if uri:
             img_tags.append(f"<img src='{uri}' alt='bilde' />")
 
-    # (valgfritt) sharepoint-lenker – IKKE med mindre include_links=True
+    # (valgfritt) sharepoint-lenker
     links_html = ""
     if include_links:
         sp_links = meta.get("sharepoint_links", []) or []
@@ -321,12 +317,9 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
                 esc = str(u).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 items.append(f"<li><a href='{esc}'>{esc}</a></li>")
             links_html = f"<h2>SharePoint-lenker</h2><ul>{''.join(items)}</ul>"
-    # escape scenariotekst
+
     scen_txt = (scenariobeskrivelse or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-    
-    
-    # CSS: tabell kun for eksport (fast layout, wrapping, sticky header, A4 marginer)
-    # Tips: endre @page size til 'landscape' hvis du vil ha liggende utskrift.
+
     html = f"""<!doctype html>
 <html>
 <head>
@@ -434,6 +427,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
 </html>
 """
     return html.encode("utf-8")
+
 
 
 # ----------------------------------------------------------
@@ -956,37 +950,30 @@ with tab_scen:
 
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
         try:
-            scenario_meta = {}
-            if isinstance(db.get("_scenario_meta"), dict):
-                scenario_meta = db["_scenario_meta"].get(meta_key, {}) or {}
-    
-                # Bruk samme bilder som i UI – existing_images er det du ser på skjermen
-                # (men scenario_meta["images"] vil normalt være lik, etter en lagring)
-                meta_for_html = dict(scenario_meta)
-                meta_for_html["images"] = existing_images
-        
-                # Tekst til eksport
-                desc_for_html = st.session_state.get(desc_key, "") or existing_desc or ""
-        
-                html_doc = make_eml_html(
-                    sel_kumule=sel_kumule,
-                    scenariobeskrivelse=desc_for_html,
-                    meta=meta_for_html,
-                    dsc_df=dsc,
-                    include_links=True,   # 👈 nå tar vi med SharePoint-lenker i HTML
-                )
-        
-                st.download_button(
-                    "Last ned HTML",
-                    data=html_doc,
-                    file_name=f"EML_{sel_kumule}.html",
-                    mime="text/html",
-                    use_container_width=True,
-                )
-                st.info("Åpne HTML-filen i nettleser og velg *Skriv ut → Lagre som PDF* for en PDF-versjon.")
+            scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) \
+                if isinstance(db.get("_scenario_meta"), dict) else {}
+
+            html_bytes = make_eml_html(
+                sel_kumule,
+                st.session_state.get(desc_key, "") or existing_desc,
+                scenario_meta,
+                dsc,
+                include_links=True,  # ta med SharePoint-lenker også
+            )
+
+            st.download_button(
+                "Last ned HTML",
+                data=html_bytes,
+                file_name=f"EML_{sel_kumule}.html",
+                mime="text/html",
+                use_container_width=True,
+            )
         except Exception as e:
             st.error(f"Kunne ikke generere HTML: {e}")
-        
+            st.exception(e)
+
+            st.error(f"Kunne ikke generere HTML: {e}")
+    
 
  
     # if pdf_bytes:
@@ -1171,7 +1158,7 @@ with tab_scen:
             "scenario": scen,
             "kumulesone": sel_kumule,
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
-            "images": images_final,
+            "images": images_dedup,
             "sharepoint_links": sp_links_list,   
             # behold som data, men ikke i PDF
             "updated": now_iso(),
