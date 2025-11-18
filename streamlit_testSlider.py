@@ -956,7 +956,7 @@ with tab_scen:
             
             html_bytes = make_eml_html(
                 sel_kumule,
-                desc_for_html                
+                desc_for_html,                
                 scenario_meta,
                 dsc,
                 include_links=True,  # ta med SharePoint-lenker også
