@@ -968,7 +968,7 @@ with tab_scen:
             
             desc_for_html = st.session_state.get(desc_key, "") or existing_desc or ""
 
-            html_doc = make_eml_html(
+            html_bytes = make_eml_html(
                 sel_kumule=sel_kumule,
                 scenariobeskrivelse=desc_for_html,
                 meta=meta_for_html,
