@@ -1130,10 +1130,7 @@ with tab_scen:
         
         # maks 8 bilder
         images_final = images_final[:8]
-        # ------- Sharepoint-innliming -------
-        sp_links_list = []
-            ln.strip() for ln in (sp_links_text or "").splitlines()
-            if ln.strip()
+       
            
         # Lagre meta inkl. fritekst og bilder
         if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict)
