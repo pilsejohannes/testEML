@@ -16,7 +16,7 @@ st.caption(f"DEBUG: fil={Path(__file__).name}  |  Streamlit={st.__version__}")
 st.set_option("client.showErrorDetails", True)
 
 
-VERSION = "0.4"
+VERSION = "0.5"
 st.title(f"EML-prototype Slider (v{VERSION})")
 st.caption(f"Kjører fil: {Path(__file__).resolve()}")
 
@@ -1100,19 +1100,37 @@ with tab_scen:
         current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
         existing_images = current_meta.get("images", []) if isinstance(current_meta.get("images"), list) else []
         
+        # ------ bygg hash-sett for eksisterende bilder (slik at vi ikke lagrer samme bilde flere ganger) ------
+        existing_hashes = set()
+        for path in existing_images:
+            try:
+                data = Path(path).read_bytes()
+                existing_hashes.add(md5_bytes(data))
+            except Exception:
+                # hvis filen mangler eller ikke kan leses, hopper vi bare over den
+                pass
         MEDIA_DIR = Path("eml_media")
         MEDIA_DIR.mkdir(exist_ok=True)
         
         # ------ lagre nye bilder til disk ------
         saved_paths = []
-        if uploads:    
+       if uploads:
             for uploaded_file in uploads:
-                ext = Path(uploaded_file.name).suffix.lower()
                 file_bytes = uploaded_file.getbuffer().tobytes()
+                file_hash = md5_bytes(file_bytes)
+
+                # hopp over hvis vi allerede har et bilde med samme innhold
+                if file_hash in existing_hashes:
+                    continue
+
+                ext = Path(uploaded_file.name).suffix.lower()
                 filename = f"{sel_kumule}_{uuid.uuid4().hex[:8]}{ext or ''}"
                 out_path = MEDIA_DIR / filename
                 out_path.write_bytes(file_bytes)
                 saved_paths.append(str(out_path))
+
+                # registrer denne hashen som brukt
+                existing_hashes.add(file_hash)
         
                
         
