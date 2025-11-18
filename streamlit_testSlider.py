@@ -1133,7 +1133,7 @@ with tab_scen:
        
            
         # Lagre meta inkl. fritekst og bilder
-        if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict)
+        if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
             db["_scenario_meta"] = {}
         #prev_links = (current_meta.get("sharepoint_links") or []) if isinstance(current_meta, dict) else []
         
