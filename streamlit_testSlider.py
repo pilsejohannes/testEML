@@ -1166,22 +1166,37 @@ with tab_scen:
         
         images_final = (normalized + new_items)[:8]
 
-        # Sharepoint-innliming
-        sp_links_list = [
-            ln.strip() for ln in (sp_links_text or "").splitlines()
-            if ln.strip()
-        ]
+        
     
         # Lagre meta inkl. fritekst og bilder
+        if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
+            db["_scenario_meta"] = {}
+        prev_links = (current_meta.get("sharepoint_links") or []) if isinstance(current_meta, dict) else []
+        
         db["_scenario_meta"][meta_key] = {
             "scenario": scen,
             "kumulesone": sel_kumule,
             "beskrivelse": (st.session_state.get(desc_key, "") or "").strip(),
             "images": images_final,
-            "sharepoint_links": sp_links_list,
+            "sharepoint_links": prev_links,   
+            # behold som data, men ikke i PDF
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
+       with st.expander("Bilder i kumulen"):
+           to_keep = []
+           for i, p in enumerate(existing_image_paths):
+               c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
+               st.image(p, use_column_width=True)
+               if c: to_keep.append(i)
+        # I submit-blokka, før du bygger normalized:
+        existing_images_raw = [existing_images_raw[i] for i in to_keep]
+
+        # Sharepoint-innliming
+        sp_links_list = [
+            ln.strip() for ln in (sp_links_text or "").splitlines()
+            if ln.strip()
+        ]
         
     
         # Valider forklaring ved avvik
