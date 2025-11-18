@@ -878,6 +878,7 @@ with tab_scen:
 
     # 2) Hente eksisterende meta og bilder
     meta_key = _scenario_key(scen, sel_kumule)
+    desc_key = f"scenario_desk_{meta_key}"
     if "_scenario_meta" not in db or not isinstance(db.get("_scenario_meta"), dict):
         db["_scenario_meta"] = {}
     current_meta = db["_scenario_meta"].get(meta_key, {}) if isinstance(db["_scenario_meta"].get(meta_key), dict) else {}
@@ -972,7 +973,6 @@ with tab_scen:
 
     st.write(f"**{len(dsc)} risiko(er) i kumulesone {sel_kumule}**")
 
- 
     if st.button("⬇️ Eksporter HTML (print-vennlig)"):
         try:
             scenario_meta = db.get("_scenario_meta", {}).get(meta_key, {}) if isinstance(db.get("_scenario_meta"), dict) else {}
