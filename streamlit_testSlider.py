@@ -1131,7 +1131,7 @@ with tab_scen:
         # maks 8 bilder
         images_final = images_final[:8]
         # ------- Sharepoint-innliming -------
-        sp_links_list = [
+        sp_links_list = []
             ln.strip() for ln in (sp_links_text or "").splitlines()
             if ln.strip()
            
@@ -1160,7 +1160,7 @@ with tab_scen:
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
 
         
-        ]
+        
         
     
         # Valider forklaring ved avvik
