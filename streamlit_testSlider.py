@@ -1183,12 +1183,12 @@ with tab_scen:
             "updated": now_iso(),
             "updated_by": st.session_state.get("bruker", ""),
         }
-       with st.expander("Bilder i kumulen"):
-           to_keep = []
-           for i, p in enumerate(existing_image_paths):
-               c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
-               st.image(p, use_column_width=True)
-               if c: to_keep.append(i)
+        with st.expander("Bilder i kumulen"):
+            to_keep = []
+            for i, p in enumerate(existing_image_paths):
+                c = st.checkbox(f"Behold: {Path(p).name}", value=True, key=f"keep_img_{i}")
+                st.image(p, use_column_width=True)
+                if c: to_keep.append(i)
         # I submit-blokka, før du bygger normalized:
         existing_images_raw = [existing_images_raw[i] for i in to_keep]
 
