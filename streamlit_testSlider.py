@@ -188,7 +188,13 @@ def classify_from_krivelse(txt: str) -> str:
     if "bygning" in t:
         return "PD"
     return "PD"
-
+def classify_from_risikonrbeskrivelse(txt: str) -> str:
+    t = (txt or "").strip().lower()
+    if "driftstap" in t:
+        return "BI"
+    if "bygning" in t:
+        return "PD"
+    return "PD"
 # ==========================================================
 # Session
 # ==========================================================
