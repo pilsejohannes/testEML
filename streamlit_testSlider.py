@@ -659,6 +659,8 @@ try:
     
     df["sum_forsikring"] = pd.to_numeric(df["sum_forsikring"], errors="coerce")
     df["eml_effektiv"]   = pd.to_numeric(df["eml_effektiv"],   errors="coerce")
+    for col in ["sum_forsikring", "eml_effektiv"]:
+        df[col] = df[col].round(0)
 
     # Kun inkluderte for kumule-summer
     grp_src = df[df["include"]]
