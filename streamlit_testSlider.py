@@ -442,142 +442,142 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
 with tab_db:
     st.subheader("1) Last opp Excel og importer alle rader")
 
-with st.expander("Forventede Excel-kolonner", expanded=False):
-    st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
-
-up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_all")
-
-# Init import-state
-if "last_import_md5" not in st.session_state:
-    st.session_state.last_import_md5 = None
-
-# Vis knapp kun hvis fil er valgt
-can_import = up_xlsx is not None
-do_import = st.button("📥 Importer fra valgt fil", disabled=not can_import)
-# Tekstfiltre
-colf1, colf2, colf3 = st.columns(3)
-with colf1:
-    filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
-with colf2:
-    filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
-with colf3:
-    filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
-if do_import and up_xlsx is not None:
-    try:
-        import pandas as pd, io
-        raw = up_xlsx.read()
-        file_hash = md5_bytes(raw)
-
-        # Hindre dobbelt-import av samme fil
-        if file_hash == st.session_state.last_import_md5:
-            st.info("Samme fil er allerede importert. Ingen endringer.")
-        else:
-            df = pd.read_excel(io.BytesIO(raw), engine="openpyxl")
-            st.caption(f"📄 Kolonner funnet: {list(df.columns)}")
-
-            df.columns = [str(c).strip() for c in df.columns]
-            lower = {c.lower(): c for c in df.columns}
-            def col(k: str) -> Optional[str]: return lower.get(EXPECTED_COLS[k].lower())
-
-            required = ["kumulenr", "risikonr"]
-            missing = [EXPECTED_COLS[k] for k in required if col(k) is None]
-            if missing:
-                st.error("Mangler påkrevde kolonner: " + ", ".join(missing))
+    with st.expander("Forventede Excel-kolonner", expanded=False):
+        st.write("\n".join([f"• {col}" for col in EXPECTED_COLS.values()]))
+    
+    up_xlsx = st.file_uploader("Last opp Excel (.xlsx)", type=["xlsx"], key="xlsx_all")
+    
+    # Init import-state
+    if "last_import_md5" not in st.session_state:
+        st.session_state.last_import_md5 = None
+    
+    # Vis knapp kun hvis fil er valgt
+    can_import = up_xlsx is not None
+    do_import = st.button("📥 Importer fra valgt fil", disabled=not can_import)
+    # Tekstfiltre
+    colf1, colf2, colf3 = st.columns(3)
+    with colf1:
+        filt_kunde = st.text_input("Filter: Kunde inneholder", value="")
+    with colf2:
+        filt_adresse = st.text_input("Filter: Adresse inneholder", value="")
+    with colf3:
+        filt_kumule = st.text_input("Filter: Kumulesone inneholder", value="")
+    if do_import and up_xlsx is not None:
+        try:
+            import pandas as pd, io
+            raw = up_xlsx.read()
+            file_hash = md5_bytes(raw)
+    
+            # Hindre dobbelt-import av samme fil
+            if file_hash == st.session_state.last_import_md5:
+                st.info("Samme fil er allerede importert. Ingen endringer.")
             else:
-                # Bygg opp eksisterende tripletter for å kunne flagge nye risikoer i eksisterende kumule
-                existing_triplets = set()
-                for _k, _r in db.items():
-                    if isinstance(_r, dict):
-                        existing_triplets.add((
-                            str(_r.get("kumulesone", "")),
-                            str(_r.get("", "")),
-                            str(_r.get("risikonr", "")),
-                        ))
-
-                imported = 0
-
-               
-                for _, row in df.iterrows():
-                    kumule = str(row.get(col("kumulenr"), ""))
-                    risiko = str(row.get(col("risikonr"), ""))
-                    forsnr = str(row.get(col("forsnr"), ""))
-                    risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
-                    adresse = str(row.get(col("adresse"), ""))
-                    kunde = str(row.get(col("kundenavn"), ""))
-                    
-                    # --- MIDLERTIDIG FIX GRUNNET MANGLENDE DEKNINGSINFORMASJON I IMPORT
-                    risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
-                    dekning = classify_from_risikonrbeskrivelse(risikonrbeskrivelse)
-
-                    navn = f"{kumule}-{risiko}-{adresse}".strip("-")
-
-                    try:
-                        si = float(row.get(col("tariffsum"), 0) or 0)
-                    except Exception:
-                        si = 0.0
-
-                    try:
-                        eml_eff = float(row.get(col("EML sum"), 0) or 0)
-                    except Exception:
-                        eml_eff = 0.0
-
-                    try:
-                        rate_eff = float(row.get(col("EML sats"), 0) or 0)
-                    except Exception:
-                        rate_eff = 0.0
-
-                    # --- DETEKTER "NY I KUMULE" + FIRST_SEEN (må skje FØR rec.update)
-                    triplet = (kumule, forsnr, risiko)
-                    is_new_here = triplet not in existing_triplets
-
-                    old_first_seen = None
-                    if navn in db and isinstance(db[navn], dict):
-                        old_first_seen = db[navn].get("first_seen")
-                    if rate_eff > 1.0:
-                        rate_eff = rate_eff / 100.0
-                    rate_eff = clamp01(rate_eff)
-                    
-                   
-
-                    # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
-                    rec = db.get(navn, {})
-                    rec.update({
-                        "kumulesone": kumule,
-                        "risikonr": risiko,
-                        "forsnr": forsnr,
-                        "risikonrbeskrivelse": risikonrbeskrivelse,
-                        "dekning": dekning,
-                        "adresse": adresse,
-                        "kundenavn": kunde,
-                        "sum_forsikring": si,
-                        #"skadegrad": float(rate_eff),
-                        "eml_effektiv": eml_eff,
-                        
-                        # eksisterende overstyrings-/visningsfelt bevares om de fantes
-                        "skadegrad_manual_on": rec.get("skadegrad_manual_on", False),
-                        "skadegrad_manual": rec.get("skadegrad_manual", 0.0),
-                        "include": bool(rec.get("include", True)),
-                        "scenario": rec.get("scenario", SCENARIOS[0]),
-                        "updated": now_iso(),
-
-                        # --- NYTT: flagg + first_seen
-                        "first_seen": old_first_seen if old_first_seen else (now_iso() if is_new_here else None),
-                        "is_new_in_kumule": bool(is_new_here),
-                    })
-                    db[navn] = rec
-                    imported += 1
-
-                    # Oppdater in-memory settet så vi ikke flagger samme triplet flere ganger i samme import
-                    existing_triplets.add(triplet)
-
-                ok, err = save_db_to_file(DB_FILENAME, db)
-                if ok:
-                    st.success(f"Importert {imported} rader til databasen.")
-                    st.session_state.last_import_md5 = file_hash
+                df = pd.read_excel(io.BytesIO(raw), engine="openpyxl")
+                st.caption(f"📄 Kolonner funnet: {list(df.columns)}")
+    
+                df.columns = [str(c).strip() for c in df.columns]
+                lower = {c.lower(): c for c in df.columns}
+                def col(k: str) -> Optional[str]: return lower.get(EXPECTED_COLS[k].lower())
+    
+                required = ["kumulenr", "risikonr"]
+                missing = [EXPECTED_COLS[k] for k in required if col(k) is None]
+                if missing:
+                    st.error("Mangler påkrevde kolonner: " + ", ".join(missing))
                 else:
-                    st.error(f"Kunne ikke lagre DB: {err}")
-    except Exception as e:
-        st.error(f"Kunne ikke lese Excel: {e}")
+                    # Bygg opp eksisterende tripletter for å kunne flagge nye risikoer i eksisterende kumule
+                    existing_triplets = set()
+                    for _k, _r in db.items():
+                        if isinstance(_r, dict):
+                            existing_triplets.add((
+                                str(_r.get("kumulesone", "")),
+                                str(_r.get("", "")),
+                                str(_r.get("risikonr", "")),
+                            ))
+    
+                    imported = 0
+    
+                   
+                    for _, row in df.iterrows():
+                        kumule = str(row.get(col("kumulenr"), ""))
+                        risiko = str(row.get(col("risikonr"), ""))
+                        forsnr = str(row.get(col("forsnr"), ""))
+                        risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
+                        adresse = str(row.get(col("adresse"), ""))
+                        kunde = str(row.get(col("kundenavn"), ""))
+                        
+                        # --- MIDLERTIDIG FIX GRUNNET MANGLENDE DEKNINGSINFORMASJON I IMPORT
+                        risikonrbeskrivelse = str(row.get(col("risikonrbeskrivelse"), ""))
+                        dekning = classify_from_risikonrbeskrivelse(risikonrbeskrivelse)
+    
+                        navn = f"{kumule}-{risiko}-{adresse}".strip("-")
+    
+                        try:
+                            si = float(row.get(col("tariffsum"), 0) or 0)
+                        except Exception:
+                            si = 0.0
+    
+                        try:
+                            eml_eff = float(row.get(col("EML sum"), 0) or 0)
+                        except Exception:
+                            eml_eff = 0.0
+    
+                        try:
+                            rate_eff = float(row.get(col("EML sats"), 0) or 0)
+                        except Exception:
+                            rate_eff = 0.0
+    
+                        # --- DETEKTER "NY I KUMULE" + FIRST_SEEN (må skje FØR rec.update)
+                        triplet = (kumule, forsnr, risiko)
+                        is_new_here = triplet not in existing_triplets
+    
+                        old_first_seen = None
+                        if navn in db and isinstance(db[navn], dict):
+                            old_first_seen = db[navn].get("first_seen")
+                        if rate_eff > 1.0:
+                            rate_eff = rate_eff / 100.0
+                        rate_eff = clamp01(rate_eff)
+                        
+                       
+    
+                        # --- OPPDATER / OPPRETT RECORD (rec) RETT FØR LAGRING
+                        rec = db.get(navn, {})
+                        rec.update({
+                            "kumulesone": kumule,
+                            "risikonr": risiko,
+                            "forsnr": forsnr,
+                            "risikonrbeskrivelse": risikonrbeskrivelse,
+                            "dekning": dekning,
+                            "adresse": adresse,
+                            "kundenavn": kunde,
+                            "sum_forsikring": si,
+                            #"skadegrad": float(rate_eff),
+                            "eml_effektiv": eml_eff,
+                            
+                            # eksisterende overstyrings-/visningsfelt bevares om de fantes
+                            "skadegrad_manual_on": rec.get("skadegrad_manual_on", False),
+                            "skadegrad_manual": rec.get("skadegrad_manual", 0.0),
+                            "include": bool(rec.get("include", True)),
+                            "scenario": rec.get("scenario", SCENARIOS[0]),
+                            "updated": now_iso(),
+    
+                            # --- NYTT: flagg + first_seen
+                            "first_seen": old_first_seen if old_first_seen else (now_iso() if is_new_here else None),
+                            "is_new_in_kumule": bool(is_new_here),
+                        })
+                        db[navn] = rec
+                        imported += 1
+    
+                        # Oppdater in-memory settet så vi ikke flagger samme triplet flere ganger i samme import
+                        existing_triplets.add(triplet)
+    
+                    ok, err = save_db_to_file(DB_FILENAME, db)
+                    if ok:
+                        st.success(f"Importert {imported} rader til databasen.")
+                        st.session_state.last_import_md5 = file_hash
+                    else:
+                        st.error(f"Kunne ikke lagre DB: {err}")
+        except Exception as e:
+            st.error(f"Kunne ikke lese Excel: {e}")
 
 
     st.markdown("---")
@@ -817,10 +817,6 @@ except Exception as e:
 # ----------------------------------------------------------
 # 📈 EML-SCENARIO – Beregn per EN kumulesone + MANUELL overstyring
 # ----------------------------------------------------------
-#
-#from datetime import date
-#import pandas as pd
-#import streamlit as st
 
 import os
 from urllib.parse import quote_plus
@@ -853,6 +849,51 @@ with tab_scen:
         step=1,
         help="Brukes til å skalere prosjektrisikoer (lineær fremdrift mellom start- og sluttår)."
     )
+
+    #------------------------------
+    #------ Hjelpefunksjoner ------
+    #------------------------------
+    def is_prosjekt(rec: Dict[str, Any]) -> bool:
+        txt = str(rec.get("risikonrbeskrivelse", "") or "").lower()
+        return "prosjekt" in txt
+    
+    def project_exposure_auto(rec: Dict[str, Any], calc_year: int) -> float:
+        if not is_prosjekt(rec):
+            return 1.0
+    
+        try:
+            start_year = int(rec.get("prosjekt_startaar"))
+            end_year   = int(rec.get("prosjekt_sluttår"))
+        except Exception:
+            return 1.0
+    
+        if end_year < start_year:
+            return 1.0
+    
+        if calc_year < start_year:
+            return 0.0
+    
+        total_years = end_year - start_year + 1
+        if total_years <= 0:
+            return 1.0
+    
+        position = calc_year - start_year + 1
+        if position <= 0:
+            return 0.0
+        if position >= total_years:
+            return 1.0
+    
+        return max(0.0, min(1.0, position / total_years))
+    
+    def project_exposure_effective(rec: Dict[str, Any], calc_year: int) -> float:
+        if rec.get("prosjekt_faktor_manual_on"):
+            try:
+                val = float(rec.get("prosjekt_faktor_manual", 0.0))
+                return max(0.0, val)
+            except Exception:
+                return project_exposure_auto(rec, calc_year)
+        return project_exposure_auto(rec, calc_year)
+
 
 
     # 1) Finn kumuler og definer kumule_liste (løser NameError)
@@ -934,63 +975,7 @@ with tab_scen:
         komm = r.get("kommune", "") or ""
         dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
         is_bi = (dekning == "BI")
-        def is_prosjekt(rec: Dict[str, Any]) -> bool:
-            #sjekk om prosjekt
-            txt = str(rec.get("risikonrbeskrivelse", "") or "").lower()
-            return "prosjekt" in txt
-        
-        
-        def project_exposure_auto(rec: Dict[str, Any], calc_year: int) -> float:
-           #skalering for prosjekteksponering over flere år
-            if not is_prosjekt(rec):
-                return 1.0
-        
-            try:
-                start_year = int(rec.get("prosjekt_startaar"))  # lagrer som heltall
-                end_year = int(rec.get("prosjekt_sluttår"))
-            except Exception:
-                # hvis ikke satt → full eksponering
-                return 1.0
-        
-            if end_year < start_year:
-                return 1.0  # defensiv: feil input, fallback
-        
-            # før prosjektstart
-            if calc_year < start_year:
-                return 0.0
-        
-            total_years = end_year - start_year + 1
-            if total_years <= 0:
-                return 1.0
-        
-            # posisjon i prosjektløpet (år 1, 2, ..., N)
-            position = calc_year - start_year + 1
-        
-            if position >= total_years:
-                # siste år og alt etter → full eksponering
-                return 1.0
-        
-            if position <= 0:
-                return 0.0
-        
-            return max(0.0, min(1.0, position / total_years))
-        
-        
-        def project_exposure_effective(rec: Dict[str, Any], calc_year: int) -> float:
-            """
-            Kombinerer automatikk + manuell overstyring.
-            Hvis prosjekt_faktor_manual_on=True og prosjekt_faktor_manual satt,
-            brukes denne. Ellers auto.
-            """
-            if rec.get("prosjekt_faktor_manual_on"):
-                try:
-                    val = float(rec.get("prosjekt_faktor_manual", 0.0))
-                    return max(0.0, val)  # tillat >1 hvis du ønsker
-                except Exception:
-                    return project_exposure_auto(rec, calc_year)
-            return project_exposure_auto(rec, calc_year)
-
-        
+                
         eml_pd = 0 if is_bi else eml_total
         eml_bi = eml_total if is_bi else 0
 
