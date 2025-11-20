@@ -1143,12 +1143,12 @@ with tab_scen:
             num_rows="fixed",
             column_config={
                 # visning
-                "adresse": st.column_config.TextColumn("Adresse", width="large"),
+                "adresse": st.column_config.TextColumn("Adresse", width="medium"),
                 "kundenavn": st.column_config.TextColumn("Kunde", width="medium"),
                 "kumulesone": st.column_config.TextColumn("Kumule", width="small"),
                 "forsnr": st.column_config.TextColumn("Forsikringsnr", width="small"),
                 "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
-                "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="large"),
+                "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="small"),
                 "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
                 "prosjekt_faktor": st.column_config.NumberColumn(
                     "Prosjektfaktor (eff.)",
@@ -1192,7 +1192,7 @@ with tab_scen:
                 "manuell_sats_pct": st.column_config.NumberColumn("Sats (%)", min_value=0.0, max_value=500.0, step=0.1, format="%.2f", help="Kan manuelt settes >100 %"),
 
                 # forklaring (redigerbar)
-                "forklaring": st.column_config.TextColumn("Forklaring ved avvik", width="large"),
+                "forklaring": st.column_config.TextColumn("Forklaring ved avvik", width="medium"),
 
                 # lesefelt
                 "auto_sats_pct": st.column_config.NumberColumn("Auto (%)", format="%.2f", disabled=True),
@@ -1208,6 +1208,7 @@ with tab_scen:
             column_order=[
                 "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning",
                 "sum_forsikring","prosjekt_faktor","sum_forsikring_justert",
+                "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual",
                 "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
                 "manuell_overstyring","manuell_sats_pct","forklaring",
                 "auto_sats_pct","skadegrad_eff_pct","eml_preview",
