@@ -7,6 +7,7 @@ import streamlit as st, sys
 import traceback
 import streamlit as st, traceback
 import uuid
+import hashlib
 
 MEDIA_DIR = Path("eml_media")
 MEDIA_DIR.mkdir(exist_ok=True)
@@ -60,6 +61,13 @@ def save_db_to_file(path, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.error(f"Klarte ikke å lagre til {path}: {e}")
+# 👉 Last databasen her:
+db = load_db_from_file(DB_FILENAME)
+st.write("DEBUG: type(db)=", type(db).__name__) #sjekk at db faktisk inneholder noe
+
+# =========================================
+# ----- globale definisjoner av variabler
+# =========================================
 
 def _fmt_nok(n: int | float) -> str:
     try:
@@ -73,19 +81,19 @@ def _fmt_pct(x: float) -> str:
     except Exception:
         return str(x)
 
-#def _has_reportlab() -> bool:
-#    try:
-#        import reportlab  # noqa: F401
-#        return True
-#    except Exception:
-#        return False
-#PDF_BYTES_KEY = "eml_pdf_bytes"
-#PDF_READY_TS_KEY = "eml_pdf_ready_ts"
+def project_exposure_effective(rec: Dict[str, Any], calc_year: int) -> float:
+    """
+    Bruker lagret prosjekt_faktor hvis finnes, ellers auto.
+    """
+    # hvis bruker har lagret noe → bruk det
+    try:
+        if "prosjekt_faktor" in rec:
+            return max(0.0, float(rec["prosjekt_faktor"]))
+    except Exception:
+        pass
 
-# 👉 Last databasen her:
-db = load_db_from_file(DB_FILENAME)
-import hashlib
-from typing import Dict
+    # ellers ren maskinberegning
+    return project_exposure_auto(rec, calc_year)
 
 def md5_bytes(b: bytes) -> str:
     h = hashlib.md5()
@@ -122,14 +130,13 @@ def save_db_to_file(path: str, db: dict):
         st.exception(e)  # viser traceback i appen
         st.stop()
 
-st.write("DEBUG: type(db)=", type(db).__name__) #sjekk at db faktisk inneholder noe
-
-
 def clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 # egen variabel for å holde på manuell skadegrad uten "tak"
 def clamp_min0(x: float) -> float:
     return max(0.0, float(x))
+
+
 
 # --- Brann-scenariofaktorer (brukes i scenariofanen) ---
 BRANN_RISIKO_FAKTOR = {"Lav": 0.20, "Middels": 0.60, "Høy": 1.0}
@@ -1371,27 +1378,35 @@ with tab_scen:
             db[k]["eml_beregnet_av"]   = eml_beregnet_av
             db[k]["updated"]           = now_iso()
             
-            # Prosjektfelter
+            # --- Prosjektfelter: start/sluttår ---
             if "prosjekt_startaar" in row and not pd.isna(row["prosjekt_startaar"]):
                 db[k]["prosjekt_startaar"] = int(row["prosjekt_startaar"])
             else:
                 db[k].pop("prosjekt_startaar", None)
+        
             if "prosjekt_sluttår" in row and not pd.isna(row["prosjekt_sluttår"]):
                 db[k]["prosjekt_sluttår"] = int(row["prosjekt_sluttår"])
             else:
                 db[k].pop("prosjekt_sluttår", None)
-            
+        
+            # auto-faktor basert på start/sluttår etter at de er oppdatert
             auto_factor = project_exposure_auto(db[k], beregningsaar)
-
-            try:
-                eff_factor = float(row.get("prosjekt_faktor", auto_factor))
-                eff_factor = max(0.0, eff_factor)
-            except Exception:
+        
+            # det brukeren har skrevet i tabellen
+            raw_val = row.get("prosjekt_faktor", None)
+            if raw_val is None or pd.isna(raw_val):
+                # ingenting skrevet → bruk auto
                 eff_factor = auto_factor
-            
+            else:
+                try:
+                    eff_factor = max(0.0, float(raw_val))
+                except Exception:
+                    eff_factor = auto_factor
+        
             db[k]["prosjekt_faktor"] = eff_factor
             db[k]["prosjekt_faktor_auto"] = auto_factor
             db[k]["prosjekt_faktor_overstyrt"] = abs(eff_factor - auto_factor) > 1e-6
+
     
             changed += 1
     
