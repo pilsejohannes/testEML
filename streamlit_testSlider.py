@@ -1146,7 +1146,7 @@ with tab_scen:
                 "forsnr": st.column_config.TextColumn("Forsikringsnr", width="small"),
                 "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
                 "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="small"),
-                "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
+                "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f", step=1),
                 "prosjekt_faktor": st.column_config.NumberColumn(
                     "Prosjektfaktor (eff.)",
                     format="%.2f",
@@ -1154,9 +1154,10 @@ with tab_scen:
                     help="Eksponeringsgrad etter start/sluttår."
                 ),
                 "sum_forsikring_justert": st.column_config.NumberColumn(
-                    "SI justert",
+                    "Eksponering tidsjustert",
                     format="%,.0f",
                     disabled=True,
+                    step=1,
                     help="SI * prosjektfaktor"
                 ),
                 "prosjekt_startaar": st.column_config.NumberColumn(
