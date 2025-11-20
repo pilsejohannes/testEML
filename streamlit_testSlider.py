@@ -178,7 +178,7 @@ def calc_eml_effective(rec: Dict[str, Any]) -> int:
     except Exception:
         return 0
  # --- SPLITT PD/BI
-def classify_from_risikonrbeskrivelse(txt: str) -> str:
+def classify_from_krivelse(txt: str) -> str:
     """
     Returnerer 'BI' hvis teksten tyder på driftstap, ellers 'PD'.
     """
@@ -839,6 +839,15 @@ def _scenario_key(scen: str, kumule: str) -> str:
 # --- VISNING I APP ---
 with tab_scen:
     st.subheader("EML-scenario – Brann")
+        beregningsaar = st.number_input(
+        "Beregning for år",
+        min_value=1900,
+        max_value=2100,
+        value=date.today().year,
+        step=1,
+        help="Brukes til å skalere prosjektrisikoer (lineær fremdrift mellom start- og sluttår)."
+    )
+
 
     # 1) Finn kumuler og definer kumule_liste (løser NameError)
     kumuler = sorted({str(r.get("kumulesone", "")).strip()
@@ -886,21 +895,105 @@ with tab_scen:
         spredning_val = brann_cfg.get("spredning_av_brann", DEFAULT_SPRED)
         slukke_val    = brann_cfg.get("tid_for_slukkeinnsats", DEFAULT_SLUKKE)
     
-        si = float(r.get("sum_forsikring", 0) or 0)
-    
+        base_si = float(r.get("sum_forsikring", 0) or 0)
+
+        # Prosjekt-eksponering (0–1 som standard, men kan være >1 ved manuell overstyring)
+        proj_factor = project_exposure_effective(r, beregningsaar)
+
+        # SI som faktisk legges til grunn i scenarioberegningen
+        si = base_si * proj_factor
+
         # Auto-rate (maskin) fra valgene som står nå
-        auto_rate = clamp01(BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKKE_FAKTOR[slukke_val])
-            
+        auto_rate = clamp01(
+            BRANN_RISIKO_FAKTOR[risiko_val]
+            * BRANN_SPREDNING_FAKTOR[spredning_val]
+            * BRANN_SLUKKE_FAKTOR[slukke_val]
+        )
+
         manual_on  = bool(r.get("skadegrad_manual_on", False))
         manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
-    
+
         eff_rate = (max(0.0, manual_pct/100.0) if manual_on else auto_rate)
+        #si = float(r.get("sum_forsikring", 0) or 0)
+    
+        # Auto-rate (maskin) fra valgene som står nå
+        #auto_rate = clamp01(BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKKE_FAKTOR[slukke_val])
+            
+        #manual_on  = bool(r.get("skadegrad_manual_on", False))
+        #manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
+    
+        #eff_rate = (max(0.0, manual_pct/100.0) if manual_on else auto_rate)
 
         addr = r.get("adresse", "") or ""
         komm = r.get("kommune", "") or ""
         dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
         is_bi = (dekning == "BI")
-        eml_total = int(round(si * eff_rate))
+        def is_prosjekt(rec: Dict[str, Any]) -> bool:
+            """
+            Returnerer True hvis dette ser ut som et prosjektobjekt.
+            Her bruker vi risikonrbeskrivelse og sjekker om 'prosjekt' inngår.
+            Juster kriteriet etter behov.
+            """
+            txt = str(rec.get("risikonrbeskrivelse", "") or "").lower()
+            return "prosjekt" in txt
+        
+        
+        def project_exposure_auto(rec: Dict[str, Any], calc_year: int) -> float:
+            """
+            Automatisk eksponeringsfaktor 0–1 for prosjektbygg, basert på start- og sluttår.
+            Eksempel: 5-års prosjekt gir 1/5, 2/5, 3/5, 4/5, 5/5.
+            Etter sluttår: 1. Før startår: 0.
+            Hvis ikke prosjekt eller manglende år → 1.
+            """
+            if not is_prosjekt(rec):
+                return 1.0
+        
+            try:
+                start_year = int(rec.get("prosjekt_startaar"))  # lagrer som heltall
+                end_year = int(rec.get("prosjekt_sluttår"))
+            except Exception:
+                # hvis ikke satt → full eksponering
+                return 1.0
+        
+            if end_year < start_year:
+                return 1.0  # defensiv: feil input, fallback
+        
+            # før prosjektstart
+            if calc_year < start_year:
+                return 0.0
+        
+            total_years = end_year - start_year + 1
+            if total_years <= 0:
+                return 1.0
+        
+            # posisjon i prosjektløpet (år 1, 2, ..., N)
+            position = calc_year - start_year + 1
+        
+            if position >= total_years:
+                # siste år og alt etter → full eksponering
+                return 1.0
+        
+            if position <= 0:
+                return 0.0
+        
+            return max(0.0, min(1.0, position / total_years))
+        
+        
+        def project_exposure_effective(rec: Dict[str, Any], calc_year: int) -> float:
+            """
+            Kombinerer automatikk + manuell overstyring.
+            Hvis prosjekt_faktor_manual_on=True og prosjekt_faktor_manual satt,
+            brukes denne. Ellers auto.
+            """
+            if rec.get("prosjekt_faktor_manual_on"):
+                try:
+                    val = float(rec.get("prosjekt_faktor_manual", 0.0))
+                    return max(0.0, val)  # tillat >1 hvis du ønsker
+                except Exception:
+                    return project_exposure_auto(rec, calc_year)
+            return project_exposure_auto(rec, calc_year)
+
+        
         eml_pd = 0 if is_bi else eml_total
         eml_bi = eml_total if is_bi else 0
 
@@ -913,6 +1006,11 @@ with tab_scen:
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
+            "prosjekt_faktor": proj_factor,
+            "prosjekt_startaar": r.get("prosjekt_startaar", None),
+            "prosjekt_sluttår": r.get("prosjekt_sluttår", None),
+            "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
+            "prosjekt_faktor_manual": float(r.get("prosjekt_faktor_manual", 0.0)),
             "sum_forsikring": si,
             # Splitt PD/BI
             "dekning": dekning,
@@ -1044,6 +1142,33 @@ with tab_scen:
                 "risikonr": st.column_config.TextColumn("Risikonr", width="small"),
                 "risikonrbeskrivelse": st.column_config.TextColumn("Risikonr-beskrivelse", width="large"),
                 "sum_forsikring": st.column_config.NumberColumn("SI", format="%,.0f"),
+                "prosjekt_faktor": st.column_config.NumberColumn(
+                    "Prosjektfaktor (eff.)",
+                    format="%.2f",
+                    disabled=True,
+                    help="Eksponeringsgrad etter start/sluttår og eventuell manuell overstyring."
+                ),
+                "sum_forsikring_justert": st.column_config.NumberColumn(
+                    "SI justert",
+                    format="%,.0f",
+                    disabled=True,
+                    help="SI * prosjektfaktor"
+                ),
+                "prosjekt_startaar": st.column_config.NumberColumn(
+                    "Prosjekt startår", min_value=1900, max_value=2100, step=1
+                ),
+                "prosjekt_sluttår": st.column_config.NumberColumn(
+                    "Prosjekt sluttår", min_value=1900, max_value=2100, step=1
+                ),
+                "prosjekt_faktor_manual_on": st.column_config.CheckboxColumn(
+                    "Manuell eksponering?"
+                ),
+                "prosjekt_faktor_manual": st.column_config.NumberColumn(
+                    "Eksponeringsgrad (manuell)",
+                    help="Hvis huket av, brukes denne i stedet for lineær fremdrift. 1.0 = 100 %",
+                    step=0.05,
+                    min_value=0.0
+                ),
                 "dekning": st.column_config.TextColumn("Dekning (PD/BI)", width="small"),
                 "eml_pd": st.column_config.NumberColumn("EML PD", format="%,.0f", disabled=True),
                 "eml_bi": st.column_config.NumberColumn("EML BI", format="%,.0f", disabled=True),
@@ -1074,7 +1199,7 @@ with tab_scen:
             },
             column_order=[
                 "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning",
-                "sum_forsikring",
+                "sum_forsikring","prosjekt_faktor","sum_forsikring_justert",
                 "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
                 "manuell_overstyring","manuell_sats_pct","forklaring",
                 "auto_sats_pct","skadegrad_eff_pct","eml_preview",
@@ -1221,6 +1346,18 @@ with tab_scen:
             db[k]["eml_beregnet_dato"] = eml_beregnet_dato
             db[k]["eml_beregnet_av"]   = eml_beregnet_av
             db[k]["updated"]           = now_iso()
+            
+            # Prosjektfelter
+            if "prosjekt_startaar" in row and not pd.isna(row["prosjekt_startaar"]):
+                db[k]["prosjekt_startaar"] = int(row["prosjekt_startaar"])
+            if "prosjekt_sluttår" in row and not pd.isna(row["prosjekt_sluttår"]):
+                db[k]["prosjekt_sluttår"] = int(row["prosjekt_sluttår"])
+
+            db[k]["prosjekt_faktor_manual_on"] = bool(row.get("prosjekt_faktor_manual_on", False))
+            try:
+                db[k]["prosjekt_faktor_manual"] = float(row.get("prosjekt_faktor_manual", 0.0))
+            except Exception:
+                db[k]["prosjekt_faktor_manual"] = 0.0
     
             changed += 1
     
