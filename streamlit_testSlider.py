@@ -907,17 +907,7 @@ with tab_scen:
     
         return max(0.0, min(1.0, position / total_years))
     
-    def project_exposure_effective(rec: Dict[str, Any], calc_year: int) -> float:
-        if rec.get("prosjekt_faktor_manual_on"):
-            try:
-                val = float(rec.get("prosjekt_faktor_manual", 0.0))
-                return max(0.0, val)
-            except Exception:
-                return project_exposure_auto(rec, calc_year)
-        return project_exposure_auto(rec, calc_year)
-
-
-
+    
     # 1) Finn kumuler og definer kumule_liste (løser NameError)
     kumuler = sorted({str(r.get("kumulesone", "")).strip()
                       for r in db.values() if isinstance(r, dict)} - {""})
@@ -985,16 +975,7 @@ with tab_scen:
         manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
 
         eff_rate = (max(0.0, manual_pct/100.0) if manual_on else auto_rate)
-        #si = float(r.get("sum_forsikring", 0) or 0)
-    
-        # Auto-rate (maskin) fra valgene som står nå
-        #auto_rate = clamp01(BRANN_RISIKO_FAKTOR[risiko_val] * BRANN_SPREDNING_FAKTOR[spredning_val] * BRANN_SLUKKE_FAKTOR[slukke_val])
-            
-        #manual_on  = bool(r.get("skadegrad_manual_on", False))
-        #manual_pct = float(r.get("skadegrad_manual", 0.0)) * 100.0
-    
-        #eff_rate = (max(0.0, manual_pct/100.0) if manual_on else auto_rate)
-
+       
         addr = r.get("adresse", "") or ""
         komm = r.get("kommune", "") or ""
         dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
@@ -1021,7 +1002,7 @@ with tab_scen:
             "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
             "prosjekt_faktor_manual": float(r.get("prosjekt_faktor_manual", 0.0)),
             
-            "sum_forsikring": si,
+            "sum_forsikring": base_si, #standard ujustert
             "sum_forsikring_justert": si, # brukes i prosjektforsikring for å skalere eksponering over tid på prosjekt/dekning
             
             # Splitt PD/BI
