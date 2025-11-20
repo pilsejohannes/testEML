@@ -1381,7 +1381,7 @@ with tab_scen:
             else:
                 db[k].pop("prosjekt_sluttår", None)
             
-           auto_factor = project_exposure_auto(db[k], beregningsaar)
+            auto_factor = project_exposure_auto(db[k], beregningsaar)
 
             try:
                 eff_factor = float(row.get("prosjekt_faktor", auto_factor))
