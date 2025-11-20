@@ -975,7 +975,8 @@ with tab_scen:
         komm = r.get("kommune", "") or ""
         dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
         is_bi = (dekning == "BI")
-                
+        
+        eml_total = int(round(si * eff_rate))        
         eml_pd = 0 if is_bi else eml_total
         eml_bi = eml_total if is_bi else 0
 
@@ -994,6 +995,7 @@ with tab_scen:
             "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
             "prosjekt_faktor_manual": float(r.get("prosjekt_faktor_manual", 0.0)),
             "sum_forsikring": si,
+            "sum_forsikring_justert": si, # brukes i prosjektforsikring for å skalere eksponering over tid på prosjekt/dekning
             # Splitt PD/BI
             "dekning": dekning,
             "eml_pd": eml_pd,
