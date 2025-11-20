@@ -1105,6 +1105,14 @@ with tab_scen:
             eml_beregnet_av = st.text_input("EML beregnet av", value=st.session_state.get("bruker", ""))
 
         with meta_col:
+            st.markdown("**Scenariobeskrivelse:**")
+            st.text_area(
+                "Beskrivelse",
+                value=existing_desc,
+                key=desc_key,
+                height=140,
+                placeholder="Beskriv kort hva som skjer i dette EML-scenarioet ..."
+            )
             st.markdown("**SharePoint-lenker (én per linje):**")
             sp_default = "\n".join(existing_sp_links) if existing_sp_links else ""
             sp_links_text = st.text_area(
