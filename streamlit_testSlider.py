@@ -736,7 +736,7 @@ try:
             "kilde": "Kilde",
             "updated": "Oppdatert",
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
-        },
+            },
         disabled=[
             # alt låses bortsett fra include/scenario
             "forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
