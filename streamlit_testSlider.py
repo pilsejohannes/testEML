@@ -138,7 +138,7 @@ BRANN_SLUKKE_FAKTOR = {"Kort": 0.40, "Middels": 0.80, "Lang": 1.00}
 
 def calc_skadegrad_from_brann_choices(rec: Dict[str, Any]) -> Optional[float]:
     """
-    Hvis vi har lagret scenario-valgene for 'brann', beregn en EML-rate derfra.
+    Hvis vi har lagret scenario-valgene for 'brann', beregn en skadegrad derfra.
     Returnerer None hvis ingen gyldige brann-verdier finnes.
     """
     b = rec.get("brann") or {}
@@ -623,6 +623,10 @@ try:
             "sum_forsikring": si,
             "skadegrad": float(rate_eff),
             "eml_effektiv": eml_eff,
+            "prosjekt_startaar": r.get("prosjekt_startaar", None),
+            "prosjekt_sluttår": r.get("prosjekt_sluttår", None),
+            "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
+            "prosjekt_faktor_manual": float(r.get("prosjekt_faktor_manual", 0.0)),
             "kilde": r.get("kilde", ""),
             "updated": r.get("updated", "")
         })
@@ -634,6 +638,7 @@ try:
             columns=[
                 "key","forsnr","risikonr","risikonrbeskrivelse","dekning","kundenavn","adresse","postnummer","kommune",
                 "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
+                "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual",
                 "kilde","updated"
             ]
         )#df = pd.DataFrame.from_records(records)
@@ -697,7 +702,8 @@ try:
     
     view_cols = [
         "forsnr","risikonr","risikonrbeskrivelse","dekning","kundenavn","adresse","postnummer","kommune",
-        "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
+        "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
+        "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual","kilde","updated","key"
     ]
     dff = dff[view_cols].reset_index(drop=True)
     
@@ -717,8 +723,18 @@ try:
             "scenario": st.column_config.SelectboxColumn("Scenario", options=SCENARIOS),
             "include": st.column_config.CheckboxColumn("Inkludert"),
             "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
-            "skadegrad": st.column_config.NumberColumn("EML-rate", format="%.2f"),
+            "skadegrad": st.column_config.NumberColumn("Skadegrad", format="%.2f"),
             "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
+            "prosjekt_startaar": st.column_config.NumberColumn(
+                "Prosjekt startår", min_value=1900, max_value=2100, step=1
+            ),
+            "prosjekt_sluttår": st.column_config.NumberColumn(
+                "Prosjekt sluttår", min_value=1900, max_value=2100, step=1
+            ),
+            "prosjekt_faktor_manual_on": st.column_config.CheckboxColumn("Manuell eksponering?"),
+            "prosjekt_faktor_manual": st.column_config.NumberColumn(
+                "Eksponeringsgrad (manuell)", step=0.05, min_value=0.0
+            ),
             "kilde": "Kilde",
             "updated": "Oppdatert",
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
@@ -726,7 +742,8 @@ try:
         disabled=[
             # alt låses bortsett fra include/scenario
             "forsnr","risikonr","kundenavn","adresse","postnummer","kommune",
-            "kumulesone","sum_forsikring","skadegrad","eml_effektiv","kilde","updated","key"
+            "kumulesone","sum_forsikring","skadegrad","eml_effektiv",
+            "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual","kilde","updated","key"
         ],
         key="eml_editor",
     )
