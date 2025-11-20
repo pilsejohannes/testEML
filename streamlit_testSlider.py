@@ -275,7 +275,7 @@ def make_eml_html(sel_kumule: str, scenariobeskrivelse: str, meta: dict, dsc_df,
         tot_pd = tot_bi = 0
 
     # kolonnevekter (gir mer plass til tekstkolonner). Summerer til 100.
-    weights = [18, 14, 7, 7, 7, 18, 5, 8, 6, 10, 10, 10]
+    weights = [12, 12, 7, 7, 7, 8, 5, 10, 6, 10, 10, 6]
 
     colgroup = "\n".join([f'<col style="width:{w}%;"/>' for w in weights])
 
