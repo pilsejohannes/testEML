@@ -732,11 +732,7 @@ try:
             ),
             "prosjekt_sluttår": st.column_config.NumberColumn(
                 "Prosjekt sluttår", min_value=1900, max_value=2100, step=1
-            ),
-            "prosjekt_faktor_manual_on": st.column_config.CheckboxColumn("Manuell eksponering?"),
-            "prosjekt_faktor_manual": st.column_config.NumberColumn(
-                "Eksponeringsgrad (manuell)", step=0.05, min_value=0.0
-            ),
+            
             "kilde": "Kilde",
             "updated": "Oppdatert",
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
@@ -963,11 +959,13 @@ with tab_scen:
     
         base_si = float(r.get("sum_forsikring", 0) or 0)
 
-        # Prosjekt-eksponering (0–1 som standard, men kan være >1 ved manuell overstyring)
-        proj_factor = project_exposure_effective(r, beregningsaar)
+        # Prosjekt-eksponering (0-1 avhengig av prosjektforløp)
+        auto_factor = project_exposure_auto(r, beregningsaar)
+        effective_factor = project_exposure_effective(r, beregningsaar)
+        is_overridden = abs(effective_factor - auto_factor) > 1e-6
 
         # SI som faktisk legges til grunn i scenarioberegningen
-        si = base_si * proj_factor
+        si = base_si * effective_factor
 
         # Auto-rate (maskin) fra valgene som står nå
         auto_rate = clamp01(
@@ -1009,7 +1007,8 @@ with tab_scen:
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
             
-            "prosjekt_faktor": proj_factor,
+            "prosjekt_faktor": effective_factor, #redigerbar versjon
+            "prosjekt_faktor_auto": auto_factor, #ikke-redigerbar versjon
             "prosjekt_startaar": r.get("prosjekt_startaar", None),
             "prosjekt_sluttår": r.get("prosjekt_sluttår", None),
             "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
@@ -1164,7 +1163,7 @@ with tab_scen:
                     "Prosjektfaktor (eff.)",
                     format="%.2f",
                     disabled=True,
-                    help="Eksponeringsgrad etter start/sluttår og eventuell manuell overstyring."
+                    help="Eksponeringsgrad etter start/sluttår."
                 ),
                 "sum_forsikring_justert": st.column_config.NumberColumn(
                     "SI justert",
@@ -1178,14 +1177,21 @@ with tab_scen:
                 "prosjekt_sluttår": st.column_config.NumberColumn(
                     "Prosjekt sluttår", min_value=2000, max_value=2100, step=1
                 ),
-                "prosjekt_faktor_manual_on": st.column_config.CheckboxColumn(
-                    "Manuell eksponering?"
-                ),
-                "prosjekt_faktor_manual": st.column_config.NumberColumn(
-                    "Eksponeringsgrad (manuell)",
-                    help="Hvis huket av, brukes denne i stedet for lineær fremdrift. 1.0 = 100 %",
+                "prosjekt_faktor": st.column_config.NumberColumn(
+                    "Prosjektfaktor",
+                    help="Eksponeringsgrad som brukes i beregningen. Kan overstyres.",
                     step=0.05,
-                    min_value=0.0
+                    min_value=0.0,
+                ),
+                "prosjekt_faktor_auto": st.column_config.NumberColumn(
+                    "Auto-faktor",
+                    format="%.2f",
+                    disabled=True,
+                    help="Lineært beregnet faktor fra start/sluttår."
+                ),
+                "prosjekt_faktor_overstyrt": st.column_config.CheckboxColumn(
+                    "Overstyrt?",
+                    disabled=True,
                 ),
                 "dekning": st.column_config.TextColumn("Dekning (PD/BI)", width="small"),
                 "eml_pd": st.column_config.NumberColumn("EML PD", format="%,.0f", disabled=True),
@@ -1368,14 +1374,24 @@ with tab_scen:
             # Prosjektfelter
             if "prosjekt_startaar" in row and not pd.isna(row["prosjekt_startaar"]):
                 db[k]["prosjekt_startaar"] = int(row["prosjekt_startaar"])
+            else:
+                db[k].pop("prosjekt_startaar", None)
             if "prosjekt_sluttår" in row and not pd.isna(row["prosjekt_sluttår"]):
                 db[k]["prosjekt_sluttår"] = int(row["prosjekt_sluttår"])
+            else:
+                db[k].pop("prosjekt_sluttår", None)
+            
+           auto_factor = project_exposure_auto(db[k], beregningsaar)
 
-            db[k]["prosjekt_faktor_manual_on"] = bool(row.get("prosjekt_faktor_manual_on", False))
             try:
-                db[k]["prosjekt_faktor_manual"] = float(row.get("prosjekt_faktor_manual", 0.0))
+                eff_factor = float(row.get("prosjekt_faktor", auto_factor))
+                eff_factor = max(0.0, eff_factor)
             except Exception:
-                db[k]["prosjekt_faktor_manual"] = 0.0
+                eff_factor = auto_factor
+            
+            db[k]["prosjekt_faktor"] = eff_factor
+            db[k]["prosjekt_faktor_auto"] = auto_factor
+            db[k]["prosjekt_faktor_overstyrt"] = abs(eff_factor - auto_factor) > 1e-6
     
             changed += 1
     
