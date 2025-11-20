@@ -732,7 +732,7 @@ try:
             ),
             "prosjekt_sluttår": st.column_config.NumberColumn(
                 "Prosjekt sluttår", min_value=1900, max_value=2100, step=1
-            
+            ),
             "kilde": "Kilde",
             "updated": "Oppdatert",
             "key": st.column_config.TextColumn("Key", help="Intern nøkkel i DB", width="small"),
