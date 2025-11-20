@@ -989,13 +989,16 @@ with tab_scen:
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
+            
             "prosjekt_faktor": proj_factor,
             "prosjekt_startaar": r.get("prosjekt_startaar", None),
             "prosjekt_sluttår": r.get("prosjekt_sluttår", None),
             "prosjekt_faktor_manual_on": bool(r.get("prosjekt_faktor_manual_on", False)),
             "prosjekt_faktor_manual": float(r.get("prosjekt_faktor_manual", 0.0)),
+            
             "sum_forsikring": si,
             "sum_forsikring_justert": si, # brukes i prosjektforsikring for å skalere eksponering over tid på prosjekt/dekning
+            
             # Splitt PD/BI
             "dekning": dekning,
             "eml_pd": eml_pd,
@@ -1005,15 +1008,19 @@ with tab_scen:
             "risiko_for_brann": risiko_val,
             "spredning_av_brann": spredning_val,
             "tid_for_slukkeinnsats": slukke_val,
+            
             # Manuell overstyring
             "manuell_overstyring": manual_on,
             "manuell_sats_pct": round(manual_pct, 2),
+            
             # Forklaring (lagres bare hvis oppgitt; kreves ved avvik fra default)
             "forklaring": r.get("forklaring_brann", ""),
+           
             # Lesefelt
             "auto_sats_pct": round(auto_rate*100.0, 2),
             "skadegrad_eff_pct": round(eff_rate*100.0, 2),
             "eml_preview": int(round(si * eff_rate)),
+            
             # Kartvisning
             "kart": maps_url(addr, komm),
             "updated": r.get("updated", "")
@@ -1139,10 +1146,10 @@ with tab_scen:
                     help="SI * prosjektfaktor"
                 ),
                 "prosjekt_startaar": st.column_config.NumberColumn(
-                    "Prosjekt startår", min_value=1900, max_value=2100, step=1
+                    "Prosjekt startår", min_value=2000, max_value=2100, step=1
                 ),
                 "prosjekt_sluttår": st.column_config.NumberColumn(
-                    "Prosjekt sluttår", min_value=1900, max_value=2100, step=1
+                    "Prosjekt sluttår", min_value=2000, max_value=2100, step=1
                 ),
                 "prosjekt_faktor_manual_on": st.column_config.CheckboxColumn(
                     "Manuell eksponering?"
