@@ -608,20 +608,20 @@ try:
         eml_eff  = int(round(si * rate_eff))
         
         records.append({
-            "include": bool(r.get("include", True)),
-            "adresse": r.get("adresse", ""),
+            
+            
             "key": key,
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
             "dekning": r.get("dekning", ""),
             "kundenavn": r.get("kundenavn", ""),
-            
+            "adresse": r.get("adresse", ""),
             "postnummer": r.get("postnummer", ""),
             "kommune": r.get("kommune", ""),
             "kumulesone": r.get("kumulesone", ""),
             "scenario": r.get("scenario", ""),
-            
+            "include": bool(r.get("include", True)),
             "sum_forsikring": si,
             "skadegrad": float(rate_eff),
             "eml_effektiv": eml_eff,
@@ -703,8 +703,8 @@ try:
     from copy import deepcopy
     
     view_cols = [
-        "forsnr","risikonr","risikonrbeskrivelse","dekning","kundenavn","adresse","postnummer","kommune",
-        "kumulesone","scenario","include","sum_forsikring","skadegrad","eml_effektiv",
+        "include","adresse","kundenavn","sum_forsikring","dekning","forsnr","risikonr","risikonrbeskrivelse","postnummer","kommune",
+        "kumulesone","scenario","skadegrad","eml_effektiv",
         "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual","kilde","updated","key"
     ]
     dff = dff[view_cols].reset_index(drop=True)
@@ -714,17 +714,17 @@ try:
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        column_config={
-            "include": st.column_config.CheckboxColumn("Inkludert"),
-            "adresse": "Adresse",
-            "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
+        column_config={            
             "forsnr": "Forsnr",
             "risikonr": "Risikonr",
             "kundenavn": "Kundenavn",
+            "adresse": "Adresse",
             "postnummer": "Postnr",
             "kommune": "Kommune",
             "kumulesone": "Kumulesone",
             "scenario": st.column_config.SelectboxColumn("Scenario", options=SCENARIOS),      
+            "include": st.column_config.CheckboxColumn("Inkludert"),
+            "sum_forsikring": st.column_config.NumberColumn("Sum forsikring", format="%,.0f"),
             "skadegrad": st.column_config.NumberColumn("Skadegrad", format="%.2f"),
             "eml_effektiv": st.column_config.NumberColumn("EML (effektiv)", format="%,.0f"),
             "prosjekt_startaar": st.column_config.NumberColumn(
@@ -1216,13 +1216,12 @@ with tab_scen:
                 "key": st.column_config.TextColumn("Key", width="small"),
             },
             column_order=[
-                "adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning",
-                "sum_forsikring","prosjekt_faktor","sum_forsikring_justert",
-                "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual",
+                "kumulesone","adresse","sum_forsikring","kart","kundenavn","forsnr","risikonr","risikonrbeskrivelse","dekning",                
                 "risiko_for_brann","spredning_av_brann","tid_for_slukkeinnsats",
                 "manuell_overstyring","manuell_sats_pct","forklaring",
-                "auto_sats_pct","skadegrad_eff_pct","eml_preview",
-                "kart","updated","key"
+                "auto_sats_pct","skadegrad_eff_pct","eml_preview","prosjekt_faktor","sum_forsikring_justert",
+                "prosjekt_startaar","prosjekt_sluttår","prosjekt_faktor_manual_on","prosjekt_faktor_manual",
+                "updated","key"
             ],
             disabled=["adresse","kundenavn","kumulesone","forsnr","risikonr","risikonrbeskrivelse","dekning","sum_forsikring",
                       "auto_sats_pct","skadegrad_eff_pct","eml_preview","kart","updated","key"],
