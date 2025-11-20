@@ -839,7 +839,7 @@ def _scenario_key(scen: str, kumule: str) -> str:
 # --- VISNING I APP ---
 with tab_scen:
     st.subheader("EML-scenario – Brann")
-        beregningsaar = st.number_input(
+    beregningsaar = st.number_input(
         "Beregning for år",
         min_value=1900,
         max_value=2100,
@@ -929,22 +929,13 @@ with tab_scen:
         dekning = (r.get("dekning") or classify_from_risikonrbeskrivelse(r.get("risikonrbeskrivelse",""))).upper()
         is_bi = (dekning == "BI")
         def is_prosjekt(rec: Dict[str, Any]) -> bool:
-            """
-            Returnerer True hvis dette ser ut som et prosjektobjekt.
-            Her bruker vi risikonrbeskrivelse og sjekker om 'prosjekt' inngår.
-            Juster kriteriet etter behov.
-            """
+            #sjekk om prosjekt
             txt = str(rec.get("risikonrbeskrivelse", "") or "").lower()
             return "prosjekt" in txt
         
         
         def project_exposure_auto(rec: Dict[str, Any], calc_year: int) -> float:
-            """
-            Automatisk eksponeringsfaktor 0–1 for prosjektbygg, basert på start- og sluttår.
-            Eksempel: 5-års prosjekt gir 1/5, 2/5, 3/5, 4/5, 5/5.
-            Etter sluttår: 1. Før startår: 0.
-            Hvis ikke prosjekt eller manglende år → 1.
-            """
+           #skalering for prosjekteksponering over flere år
             if not is_prosjekt(rec):
                 return 1.0
         
