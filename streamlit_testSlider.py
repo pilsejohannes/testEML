@@ -608,18 +608,20 @@ try:
         eml_eff  = int(round(si * rate_eff))
         
         records.append({
+            "include": bool(r.get("include", True)),
+            "adresse": r.get("adresse", ""),
             "key": key,
             "forsnr": r.get("forsnr", ""),
             "risikonr": r.get("risikonr", ""),
             "risikonrbeskrivelse": r.get("risikonrbeskrivelse", ""),
             "dekning": r.get("dekning", ""),
             "kundenavn": r.get("kundenavn", ""),
-            "adresse": r.get("adresse", ""),
+            
             "postnummer": r.get("postnummer", ""),
             "kommune": r.get("kommune", ""),
             "kumulesone": r.get("kumulesone", ""),
             "scenario": r.get("scenario", ""),
-            "include": bool(r.get("include", True)),
+            
             "sum_forsikring": si,
             "skadegrad": float(rate_eff),
             "eml_effektiv": eml_eff,
